@@ -284,6 +284,8 @@ PG_USER=${PG_USER:-authentik}
 PG_DB=${PG_DB:-authentik}
 AUTHENTIK_IMAGE=${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}
 AUTHENTIK_TAG=${AUTHENTIK_TAG:-2024.2.2}
+DOMAIN_NAME=${DOMAIN_NAME}
+AUTHENTIK_SUBDOMAIN=${AUTHENTIK_SUBDOMAIN}
 EOF
     
     # Create authentik/docker-compose.yml
