@@ -6,13 +6,13 @@
 # DOMAIN CONFIGURATION
 # ================================
 # Your main domain name (e.g., example.com)
-DOMAIN_NAME="YOUR_DOMAIN.com"
+DOMAIN_NAME="YOUR_DOMAIN.com" # e.g. mydomain.com
 
 # Subdomain for Traefik dashboard (e.g., traefik)
-TRAEFIK_SUBDOMAIN="YOUR_TRAEFIK_SUBDOMAIN"
+TRAEFIK_SUBDOMAIN="YOUR_TRAEFIK_SUBDOMAIN" # e.g. traefik
 
 # Subdomain for Authentik (e.g., auth or sso)
-AUTHENTIK_SUBDOMAIN="YOUR_AUTHENTIK_SUBDOMAIN"
+AUTHENTIK_SUBDOMAIN="YOUR_AUTHENTIK_SUBDOMAIN" # e.g. authentik
 
 # Your email address for Let's Encrypt certificates
 EMAIL="YOUR_EMAIL@domain.com"
@@ -73,7 +73,7 @@ PG_DB="authentik"
 # Authentik Docker image (optional, defaults to ghcr.io/goauthentik/server)
 AUTHENTIK_IMAGE="ghcr.io/goauthentik/server"
 
-# Authentik Docker tag/version (optional, defaults to 2024.2.2)
+# Authentik Docker tag/version (optional, defaults to 2025.6.4)
 AUTHENTIK_TAG="2025.6.4"
 
 # ================================
