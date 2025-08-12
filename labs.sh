@@ -290,7 +290,7 @@ EOF
     cat > authentik/docker-compose.yml << 'EOF'
 services:
   postgresql:
-    image: docker.io/library/postgres:12-alpine
+    image: docker.io/library/postgres:16-alpine
     container_name: authentik-db
     restart: unless-stopped
     healthcheck:
