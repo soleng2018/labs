@@ -1,0 +1,92 @@
+# Lab Infrastructure Configuration File
+# Please configure all variables below before running lab.sh
+# Remove all placeholder values and replace with your actual values
+
+# ================================
+# DOMAIN CONFIGURATION
+# ================================
+# Your main domain name (e.g., example.com)
+DOMAIN_NAME="YOUR_DOMAIN.com"
+
+# Subdomain for Traefik dashboard (e.g., traefik)
+TRAEFIK_SUBDOMAIN="YOUR_TRAEFIK_SUBDOMAIN"
+
+# Subdomain for Authentik (e.g., auth or sso)
+AUTHENTIK_SUBDOMAIN="YOUR_AUTHENTIK_SUBDOMAIN"
+
+# Your email address for Let's Encrypt certificates
+EMAIL="YOUR_EMAIL@domain.com"
+
+# ================================
+# TRAEFIK CONFIGURATION
+# ================================
+# Traefik Docker image version
+TRAEFIK_VERSION="traefik:v3.5.0"
+
+# ================================
+# CLOUDFLARE CONFIGURATION
+# ================================
+# Cloudflare API Key (Global API Key or API Token with Zone:DNS:Edit permissions)
+CLOUDFLARE_API_KEY="YOUR_CLOUDFLARE_API_KEY"
+
+# Cloudflare account email
+CLOUDFLARE_EMAIL="YOUR_CLOUDFLARE_EMAIL@domain.com"
+
+# Cloudflare Origin Certificate (include -----BEGIN CERTIFICATE----- and -----END CERTIFICATE-----)
+CLOUDFLARE_ORIGIN_CERT="-----BEGIN CERTIFICATE-----
+REPLACE_WITH_YOUR_CLOUDFLARE_ORIGIN_CERTIFICATE_CONTENT
+-----END CERTIFICATE-----"
+
+# Cloudflare Origin Private Key (include -----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY-----)
+CLOUDFLARE_ORIGIN_KEY="-----BEGIN PRIVATE KEY-----
+REPLACE_WITH_YOUR_CLOUDFLARE_ORIGIN_PRIVATE_KEY_CONTENT
+-----END PRIVATE KEY-----"
+
+# ================================
+# CLOUDFLARED TUNNEL CONFIGURATION
+# ================================
+# Cloudflared tunnel token (get this from Cloudflare Zero Trust dashboard)
+CLOUDFLARED_TOKEN="YOUR_CLOUDFLARED_TUNNEL_TOKEN"
+
+# ================================
+# AUTHENTIK CONFIGURATION
+# ================================
+# Authentik secret key (generate a random 50-character string)
+# You can generate one using: openssl rand -base64 36
+AUTHENTIK_SECRET_KEY="CHANGEME_GENERATE_RANDOM_50_CHAR_STRING"
+
+# ================================
+# DATABASE CONFIGURATION
+# ================================
+# PostgreSQL password for Authentik database
+PG_PASS="CHANGEME_STRONG_DATABASE_PASSWORD"
+
+# PostgreSQL username (optional, defaults to 'authentik')
+PG_USER="authentik"
+
+# PostgreSQL database name (optional, defaults to 'authentik')
+PG_DB="authentik"
+
+# ================================
+# AUTHENTIK DOCKER IMAGE CONFIGURATION
+# ================================
+# Authentik Docker image (optional, defaults to ghcr.io/goauthentik/server)
+AUTHENTIK_IMAGE="ghcr.io/goauthentik/server"
+
+# Authentik Docker tag/version (optional, defaults to 2024.2.2)
+AUTHENTIK_TAG="2025.6.4"
+
+# ================================
+# IMPORTANT NOTES:
+# ================================
+# 1. Replace ALL placeholder values above with your actual configuration
+# 2. Keep the quotes around the values
+# 3. For multi-line values like certificates, ensure proper formatting
+# 4. Generate strong passwords for PG_PASS and AUTHENTIK_SECRET_KEY
+# 5. Ensure your Cloudflare tunnel is created and configured properly
+# 6. Make sure DNS records point to your Cloudflare tunnel before starting services
+#
+# Security Notes:
+# - This file contains sensitive information, keep it secure
+# - Do not commit this file to version control with real values
+# - Set proper file permissions: chmod 600 parameters.txt
