@@ -1,9 +1,15 @@
 #!/bin/bash
 
 # WiFi Auto Roaming Script (SSID-based)
-# Usage: ./roam_script.sh <SSID> <min_time_minutes> <max_time_minutes> [min_signal_dbm] [interface]
+# Usage: ./roam_script.sh [SSID] [min_time_minutes] [max_time_minutes] [min_signal_dbm] [interface]
 
 set -euo pipefail
+
+# Default Configuration Values
+DEFAULT_SSID="Alonso-ENT"
+DEFAULT_MIN_TIME=1
+DEFAULT_MAX_TIME=2
+DEFAULT_MIN_SIGNAL=-75
 
 # Configuration
 INTERFACE=""  # Will be auto-detected or set by user
@@ -15,7 +21,6 @@ MAX_SCAN_ATTEMPTS=5
 SCAN_WAIT_TIME=3
 STATUS_TIMEOUT=10  # Timeout for status commands
 COMPREHENSIVE_SCAN_WAIT=5  # Extra wait time for comprehensive scans
-DEFAULT_MIN_SIGNAL=-75  # Default minimum signal strength in dBm
 
 # Color codes for output
 RED='\033[0;31m'
@@ -48,11 +53,11 @@ log_error() {
 # Function to automatically detect wireless interface
 auto_detect_interface() {
     local detected_interface=""
-    
+
     # Method 1: Look for interfaces with wireless extensions
     local wireless_interfaces
     wireless_interfaces=$(iwconfig 2>/dev/null | grep -E "^[a-zA-Z0-9]+" | awk '{print $1}' | grep -v "lo" || true)
-    
+
     if [ -n "$wireless_interfaces" ]; then
         # Filter for interfaces that are UP and have wireless capabilities
         local active_wireless=""
@@ -65,17 +70,17 @@ auto_detect_interface() {
                 fi
             fi
         done <<< "$wireless_interfaces"
-        
+
         if [ -n "$detected_interface" ]; then
             echo "$detected_interface"
             return 0
         fi
     fi
-    
+
     # Method 2: Use iw to list all wireless interfaces
     local iw_interfaces
     iw_interfaces=$(iw dev 2>/dev/null | grep Interface | awk '{print $2}' || true)
-    
+
     if [ -n "$iw_interfaces" ]; then
         # Pick the first UP interface
         while read -r iface; do
@@ -84,12 +89,12 @@ auto_detect_interface() {
                 break
             fi
         done <<< "$iw_interfaces"
-        
+
         if [ -n "$detected_interface" ]; then
             echo "$detected_interface"
             return 0
         fi
-        
+
         # If no UP interface found, pick the first available
         local first_iface
         first_iface=$(echo "$iw_interfaces" | head -n1)
@@ -99,7 +104,7 @@ auto_detect_interface() {
             return 0
         fi
     fi
-    
+
     # Method 3: Look in /sys/class/net for wireless interfaces
     for iface in /sys/class/net/*/; do
         iface=$(basename "$iface")
@@ -109,25 +114,25 @@ auto_detect_interface() {
             return 0
         fi
     done
-    
+
     return 1
 }
 
 # Function to validate interface
 validate_interface() {
     local interface="$1"
-    
+
     log_info "Validating interface: $interface"
-    
+
     # Check if interface exists
     if ! ip link show "$interface" >/dev/null 2>&1; then
         log_error "Interface $interface does not exist"
         return 1
     fi
-    
+
     # Check if it's a wireless interface using multiple methods
     local is_wireless=false
-    
+
     # Method 1: Check with iw dev
     if iw dev "$interface" info >/dev/null 2>&1; then
         is_wireless=true
@@ -141,14 +146,14 @@ validate_interface() {
     elif iwconfig "$interface" 2>&1 | grep -qv "no wireless extensions"; then
         is_wireless=true
     fi
-    
+
     if [ "$is_wireless" = false ]; then
         log_error "Interface $interface is not a wireless interface"
         return 1
     fi
-    
+
     log_success "Confirmed $interface is a wireless interface"
-    
+
     # Check if interface is up
     if ! ip link show "$interface" up >/dev/null 2>&1; then
         log_warning "Interface $interface is down, attempting to bring it up..."
@@ -160,7 +165,7 @@ validate_interface() {
             return 1
         fi
     fi
-    
+
     # Test wpa_cli connectivity - make this less strict since the interface is clearly working
     if timeout 5 sudo wpa_cli -i "$interface" ping >/dev/null 2>&1; then
         log_success "wpa_cli responding on interface $interface"
@@ -168,7 +173,7 @@ validate_interface() {
         log_warning "wpa_cli not responding on interface $interface"
         log_warning "This may be normal if using NetworkManager or other wireless managers"
         log_info "Attempting to verify interface can scan for networks..."
-        
+
         # Try a simple scan to verify the interface works
         if timeout 10 sudo iw dev "$interface" scan >/dev/null 2>&1; then
             log_success "Interface $interface can perform wireless scans"
@@ -179,7 +184,7 @@ validate_interface() {
             return 1
         fi
     fi
-    
+
     log_success "Interface $interface validated successfully"
     return 0
 }
@@ -236,21 +241,21 @@ discover_bssids_for_ssid() {
             # Parse scan results for the target SSID
             local scan_results
             if scan_results=$(timeout $STATUS_TIMEOUT sudo wpa_cli -i "$INTERFACE" scan_results 2>/dev/null); then
-                
+
                 # Process each line looking for our SSID
                 local found_any=false
                 while IFS=$'\t' read -r bssid frequency signal flags ssid_from_scan; do
                     # Skip header line and empty lines
                     [[ "$bssid" =~ ^bssid ]] && continue
                     [[ -z "$bssid" ]] && continue
-                    
+
                     # Check if this entry matches our target SSID
                     if [ "$ssid_from_scan" = "$target_ssid" ]; then
                         found_any=true
-                        
+
                         # Parse signal strength (remove leading/trailing spaces)
                         signal=$(echo "$signal" | tr -d '[:space:]')
-                        
+
                         # Check if signal is strong enough
                         if [ "$signal" -ge "$min_signal" ]; then
                             log_success "Found suitable BSSID: $bssid (Signal: ${signal} dBm, Freq: ${frequency} MHz)"
@@ -261,7 +266,7 @@ discover_bssids_for_ssid() {
                         fi
                     fi
                 done <<< "$scan_results"
-                
+
                 if [ "$found_any" = true ]; then
                     # Check if we found enough suitable BSSIDs
                     if [ ${#AVAILABLE_BSSIDS[@]} -ge 2 ]; then
@@ -500,9 +505,9 @@ refresh_bssid_list() {
     local min_signal="$2"
 
     log_info "Refreshing BSSID list for SSID '$target_ssid'..."
-    
+
     local old_count=${#AVAILABLE_BSSIDS[@]}
-    
+
     if discover_bssids_for_ssid "$target_ssid" "$min_signal"; then
         local new_count=${#AVAILABLE_BSSIDS[@]}
         log_success "BSSID list refreshed: $old_count -> $new_count available BSSIDs"
@@ -514,31 +519,58 @@ refresh_bssid_list() {
     fi
 }
 
+# Function to display usage information
+show_usage() {
+    echo "WiFi Auto Roaming Script (SSID-based)"
+    echo ""
+    echo "Usage: $0 [SSID] [min_time_minutes] [max_time_minutes] [min_signal_dbm] [interface]"
+    echo ""
+    echo "Default values (used if no parameters specified):"
+    echo "  SSID                - $DEFAULT_SSID"
+    echo "  min_time_minutes    - $DEFAULT_MIN_TIME"
+    echo "  max_time_minutes    - $DEFAULT_MAX_TIME"
+    echo "  min_signal_dbm      - $DEFAULT_MIN_SIGNAL"
+    echo "  interface           - Auto-detected"
+    echo ""
+    echo "Examples:"
+    echo "  $0                                           # Use all defaults"
+    echo "  $0 \"MyWiFiNetwork\"                          # Use custom SSID, other defaults"
+    echo "  $0 \"MyWiFiNetwork\" 20 30                     # Custom SSID and timing"
+    echo "  $0 \"MyWiFiNetwork\" 20 30 -70                 # Custom SSID, timing, and signal"
+    echo "  $0 \"MyWiFiNetwork\" 20 30 -70 wlan0           # All custom parameters"
+    echo ""
+    echo "Parameters:"
+    echo "  SSID                - The WiFi network name to roam within"
+    echo "  min_time_minutes    - Minimum wait time between roams"
+    echo "  max_time_minutes    - Maximum wait time between roams"
+    echo "  min_signal_dbm      - Minimum signal strength required"
+    echo "  interface           - WiFi interface name (auto-detected if not specified)"
+    echo ""
+    echo "Available network interfaces:"
+    ip link show | grep -E "^[0-9]+" | awk '{print "  " $2}' | sed 's/:$//' || true
+}
+
 # Main function
 main() {
-    # Check arguments
-    if [ $# -lt 3 ] || [ $# -gt 5 ]; then
-        echo "Usage: $0 <SSID> <min_time_minutes> <max_time_minutes> [min_signal_dbm] [interface]"
-        echo "Example: $0 \"MyWiFiNetwork\" 20 30 -70"
-        echo "Example: $0 \"MyWiFiNetwork\" 20 30 -70 wlan0"
-        echo ""
-        echo "Parameters:"
-        echo "  SSID                - The WiFi network name to roam within"
-        echo "  min_time_minutes    - Minimum wait time between roams"
-        echo "  max_time_minutes    - Maximum wait time between roams"
-        echo "  min_signal_dbm      - Minimum signal strength required (default: $DEFAULT_MIN_SIGNAL dBm)"
-        echo "  interface           - WiFi interface name (auto-detected if not specified)"
-        echo ""
-        echo "Available network interfaces:"
-        ip link show | grep -E "^[0-9]+" | awk '{print "  " $2}' | sed 's/:$//' || true
-        exit 1
+    # Handle help requests
+    if [ $# -eq 1 ] && [[ "$1" =~ ^(-h|--help|help)$ ]]; then
+        show_usage
+        exit 0
     fi
 
-    local target_ssid="$1"
-    local min_time="$2"
-    local max_time="$3"
+    # Parse arguments with defaults
+    local target_ssid="${1:-$DEFAULT_SSID}"
+    local min_time="${2:-$DEFAULT_MIN_TIME}"
+    local max_time="${3:-$DEFAULT_MAX_TIME}"
     local min_signal="${4:-$DEFAULT_MIN_SIGNAL}"
     local user_interface="${5:-}"
+
+    # Validate we don't have too many arguments
+    if [ $# -gt 5 ]; then
+        log_error "Too many arguments provided"
+        show_usage
+        exit 1
+    fi
 
     # Set up interface - either user-specified or auto-detected
     if [ -n "$user_interface" ]; then
@@ -556,7 +588,7 @@ main() {
             exit 1
         fi
     fi
-    
+
     # Validate the interface
     if ! validate_interface "$INTERFACE"; then
         log_error "Interface validation failed"
@@ -595,6 +627,41 @@ main() {
     log_info "Minimum signal: $min_signal dBm"
     log_info "Using interface: $INTERFACE"
 
+    # Show which values are defaults vs user-provided
+    echo ""
+    log_info "=== Configuration Summary ==="
+    if [ $# -ge 1 ]; then
+        log_info "SSID: '$target_ssid' (user-provided)"
+    else
+        log_info "SSID: '$target_ssid' (default)"
+    fi
+
+    if [ $# -ge 2 ]; then
+        log_info "Min Time: $min_time minutes (user-provided)"
+    else
+        log_info "Min Time: $min_time minutes (default)"
+    fi
+
+    if [ $# -ge 3 ]; then
+        log_info "Max Time: $max_time minutes (user-provided)"
+    else
+        log_info "Max Time: $max_time minutes (default)"
+    fi
+
+    if [ $# -ge 4 ]; then
+        log_info "Signal Threshold: $min_signal dBm (user-provided)"
+    else
+        log_info "Signal Threshold: $min_signal dBm (default)"
+    fi
+
+    if [ $# -ge 5 ]; then
+        log_info "Interface: $INTERFACE (user-provided)"
+    else
+        log_info "Interface: $INTERFACE (auto-detected)"
+    fi
+    log_info "============================="
+    echo ""
+
     # Display interface information
     log_info "=== Interface Information ==="
     if iw_info=$(iw dev "$INTERFACE" info 2>/dev/null); then
@@ -603,7 +670,7 @@ main() {
         wiphy=$(echo "$iw_info" | grep "wiphy" | awk '{print $2}')
         mac=$(echo "$iw_info" | grep "addr" | awk '{print $2}')
         type=$(echo "$iw_info" | grep "type" | awk '{print $2}')
-        
+
         [ -n "$ifindex" ] && log_info "Interface Index: $ifindex"
         [ -n "$wiphy" ] && log_info "Wiphy: $wiphy"
         [ -n "$mac" ] && log_info "MAC Address: $mac"
