@@ -131,8 +131,30 @@ customize_filesystem() {
     local squashfs_file="${ISO_NEW_DIR}/casper/filesystem.squashfs"
     local filesystem_dir="${WORK_DIR}/filesystem"
     
+    # Check if squashfs file exists
+    if [ ! -f "$squashfs_file" ]; then
+        log_error "Squashfs file not found at: $squashfs_file"
+        log_info "Searching for squashfs files in extracted ISO..."
+        
+        # Search for squashfs files
+        local found_squashfs
+        found_squashfs=$(find "$ISO_NEW_DIR" -name "*.squashfs" -type f 2>/dev/null | head -1)
+        
+        if [ -n "$found_squashfs" ]; then
+            log_info "Found squashfs file at: $found_squashfs"
+            squashfs_file="$found_squashfs"
+        else
+            log_error "No squashfs files found in the extracted ISO"
+            log_info "ISO directory structure:"
+            find "$ISO_NEW_DIR" -maxdepth 3 -type d 2>/dev/null || true
+            log_info "Files in potential casper location:"
+            ls -la "$ISO_NEW_DIR/casper/" 2>/dev/null || log_warning "No casper directory found"
+            exit 1
+        fi
+    fi
+    
     # Extract squashfs
-    log_info "Extracting squashfs filesystem..."
+    log_info "Extracting squashfs filesystem from: $squashfs_file"
     [ -d "$filesystem_dir" ] && sudo rm -rf "$filesystem_dir"
     mkdir -p "$filesystem_dir"
     
