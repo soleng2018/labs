@@ -162,12 +162,57 @@ customize_filesystem() {
         log_error "Squashfs file not found at: $squashfs_file"
         log_info "Searching for squashfs files in extracted ISO..."
         
-        # Search for squashfs files
-        local found_squashfs
-        found_squashfs=$(find "$ISO_NEW_DIR" -name "*.squashfs" -type f 2>/dev/null | head -1)
+        # Search for squashfs files - prioritize filesystem over installer
+        log_info "Available squashfs files:"
+        find "$ISO_NEW_DIR" -name "*.squashfs" -type f 2>/dev/null | while read -r file; do
+            log_info "  - $(basename "$file")"
+        done
+        
+        # Look for the main filesystem squashfs (not installer)
+        local found_squashfs=""
+        local all_squashfs
+        all_squashfs=$(find "$ISO_NEW_DIR" -name "*.squashfs" -type f 2>/dev/null)
+        
+        # Priority order: filesystem.squashfs > any file without "installer" in name > any squashfs
+        for file in $all_squashfs; do
+            if [[ "$(basename "$file")" == "filesystem.squashfs" ]]; then
+                found_squashfs="$file"
+                break
+            fi
+        done
+        
+        # If no filesystem.squashfs, look for non-installer squashfs
+        if [ -z "$found_squashfs" ]; then
+            for file in $all_squashfs; do
+                if [[ "$(basename "$file")" != *"installer"* ]]; then
+                    found_squashfs="$file"
+                    break
+                fi
+            done
+        fi
+        
+        # If still nothing, look for any squashfs that might contain a root filesystem
+        if [ -z "$found_squashfs" ]; then
+            for file in $all_squashfs; do
+                # Check if this squashfs contains /bin/bash or /usr/bin/bash
+                log_info "Testing squashfs file: $(basename "$file")"
+                if unsquashfs -l "$file" 2>/dev/null | grep -q "bin/bash"; then
+                    log_info "  - Contains bash, likely a root filesystem"
+                    found_squashfs="$file"
+                    break
+                else
+                    log_info "  - No bash found, likely installer/live system"
+                fi
+            done
+        fi
+        
+        # Final fallback - use any squashfs file
+        if [ -z "$found_squashfs" ]; then
+            found_squashfs=$(echo "$all_squashfs" | head -1)
+        fi
         
         if [ -n "$found_squashfs" ]; then
-            log_info "Found squashfs file at: $found_squashfs"
+            log_info "Selected squashfs file: $(basename "$found_squashfs")"
             squashfs_file="$found_squashfs"
         else
             log_error "No squashfs files found in the extracted ISO"
@@ -201,14 +246,36 @@ customize_filesystem() {
     sudo mount --bind /proc "$filesystem_dir/proc"
     sudo mount --bind /sys "$filesystem_dir/sys"
     
+    # Verify chroot environment is valid
+    log_info "Verifying chroot environment..."
+    if [ ! -f "$filesystem_dir/bin/bash" ] && [ ! -f "$filesystem_dir/usr/bin/bash" ]; then
+        log_error "No bash found in extracted filesystem"
+        log_info "Filesystem contents:"
+        ls -la "$filesystem_dir/" | head -10
+        log_info "Checking for shells:"
+        find "$filesystem_dir" -name "*sh" -type f | head -5
+        exit 1
+    fi
+    
+    # Determine the correct bash path
+    local bash_path="/bin/bash"
+    if [ ! -f "$filesystem_dir/bin/bash" ] && [ -f "$filesystem_dir/usr/bin/bash" ]; then
+        bash_path="/usr/bin/bash"
+    fi
+    log_info "Using bash at: $bash_path"
+    
     # Update package repositories and install required packages
     log_info "Installing required packages in chroot..."
-    sudo chroot "$filesystem_dir" /bin/bash -c "
+    sudo chroot "$filesystem_dir" "$bash_path" -c "
         export DEBIAN_FRONTEND=noninteractive
+        echo 'Updating package lists...'
         apt-get update
+        echo 'Installing required packages...'
         apt-get install -y wpasupplicant dhcpcd5 iw wireless-tools speedtest-cli curl wget systemd
+        echo 'Cleaning up...'
         apt-get clean
         rm -rf /var/lib/apt/lists/*
+        echo 'Package installation completed'
     "
     
     # Create necessary directories
