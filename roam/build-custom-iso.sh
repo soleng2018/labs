@@ -509,13 +509,15 @@ create_custom_iso() {
         # No extra parameters that create additional boot catalog entries
         log_info "Using minimal xorriso parameters to match original Ubuntu ISO"
         
-        # Use the EXACT same minimal parameters as a working Ubuntu ISO
+        # ULTIMATE MINIMAL - Only essential UEFI parameters (no boot catalog at all)
+        log_info "Using ABSOLUTE MINIMAL xorriso command to prevent any extra boot entries"
+        
         xorriso -as mkisofs \
-            -r -V "Ubuntu-Server ${UBUNTU_VERSION} LTS amd64" \
-            -o "$output_iso" \
-            -J -l \
+            -V "Ubuntu-Server ${UBUNTU_VERSION} LTS amd64" \
+            -r \
             -e "$efi_img" \
             -no-emul-boot \
+            -o "$output_iso" \
             .
             
         # Verify no extra boot files were created
