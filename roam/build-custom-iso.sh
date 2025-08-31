@@ -113,13 +113,39 @@ extract_iso() {
     mkdir -p "$ISO_NEW_DIR"
     
     # Extract the ISO
-    7z x -o"$ISO_EXTRACT_DIR" "${WORK_DIR}/${UBUNTU_ISO_NAME}"
+    log_info "Extracting ISO using 7z..."
+    if ! 7z x -o"$ISO_EXTRACT_DIR" "${WORK_DIR}/${UBUNTU_ISO_NAME}"; then
+        log_error "Failed to extract ISO with 7z"
+        exit 1
+    fi
+    
+    # Verify extraction worked
+    if [ ! -d "$ISO_EXTRACT_DIR" ] || [ -z "$(ls -A "$ISO_EXTRACT_DIR" 2>/dev/null)" ]; then
+        log_error "ISO extraction failed - directory is empty or doesn't exist"
+        exit 1
+    fi
     
     # Copy extracted contents to new ISO directory
-    cp -r "$ISO_EXTRACT_DIR"/* "$ISO_NEW_DIR"/
+    log_info "Copying extracted contents..."
+    if ! cp -r "$ISO_EXTRACT_DIR"/* "$ISO_NEW_DIR"/; then
+        log_error "Failed to copy extracted contents"
+        exit 1
+    fi
+    
+    # Verify copy worked
+    if [ -z "$(ls -A "$ISO_NEW_DIR" 2>/dev/null)" ]; then
+        log_error "Copy failed - new ISO directory is empty"
+        exit 1
+    fi
     
     # Make files writable
     chmod -R u+w "$ISO_NEW_DIR"
+    
+    # Show what was extracted for debugging
+    log_info "Extraction verification:"
+    log_info "Files in ISO_NEW_DIR: $(ls -1 "$ISO_NEW_DIR" | wc -l) items"
+    log_info "Directory structure preview:"
+    find "$ISO_NEW_DIR" -maxdepth 2 -type d | head -10 || true
     
     log_success "ISO extracted successfully"
 }
@@ -162,6 +188,14 @@ customize_filesystem() {
     
     # Mount necessary filesystems for chroot
     log_info "Preparing chroot environment..."
+    
+    # Ensure mount point directories exist
+    sudo mkdir -p "$filesystem_dir/dev"
+    sudo mkdir -p "$filesystem_dir/dev/pts"
+    sudo mkdir -p "$filesystem_dir/proc"
+    sudo mkdir -p "$filesystem_dir/sys"
+    
+    # Mount the filesystems
     sudo mount --bind /dev "$filesystem_dir/dev"
     sudo mount --bind /dev/pts "$filesystem_dir/dev/pts"
     sudo mount --bind /proc "$filesystem_dir/proc"
@@ -211,10 +245,10 @@ EOF
     
     # Unmount filesystems
     log_info "Cleaning up chroot environment..."
-    sudo umount "$filesystem_dir/sys" || true
-    sudo umount "$filesystem_dir/proc" || true
-    sudo umount "$filesystem_dir/dev/pts" || true
-    sudo umount "$filesystem_dir/dev" || true
+    sudo umount "$filesystem_dir/sys" 2>/dev/null || true
+    sudo umount "$filesystem_dir/proc" 2>/dev/null || true
+    sudo umount "$filesystem_dir/dev/pts" 2>/dev/null || true
+    sudo umount "$filesystem_dir/dev" 2>/dev/null || true
     
     # Rebuild squashfs
     log_info "Rebuilding squashfs filesystem..."
