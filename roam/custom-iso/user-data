@@ -1,0 +1,112 @@
+#cloud-config
+autoinstall:
+  version: 1
+  
+  # Early commands to run before installation
+  early-commands:
+    - systemctl stop ssh
+  
+  # Locale and keyboard settings
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  
+  # Network configuration - skip network setup during install, use wpa_supplicant instead
+  network:
+    version: 2
+  
+  # Identity configuration
+  identity:
+    realname: WiFi Roaming User
+    username: wifiroam
+    password: $6$rounds=4096$aQ7fGp8w$oEoKBuLg/ZIWnRwVBRHYX2m0X3E3h5xFzJ0DjqWxVk8rQ1TqP0HzY3nKgQ2f6Lz5YkJ9wXv2Nz3mQ4tW6Kp8j.
+    hostname: wifi-roaming-system
+  
+  # SSH configuration - enable for remote access
+  ssh:
+    install-server: true
+    authorized-keys: []
+  
+  # Package configuration
+  packages:
+    # Essential WiFi packages
+    - wpasupplicant
+    - dhcpcd5
+    - iw
+    - wireless-tools
+    # Network testing tools
+    - speedtest-cli
+    # System utilities
+    - curl
+    - wget
+    - systemd
+    - systemctl
+    # Development tools (optional)
+    - git
+    - vim
+    - nano
+    
+  # Disable automatic package updates to prevent interference
+  package_update: false
+  package_upgrade: false
+  
+  # Storage configuration - use entire disk
+  storage:
+    layout:
+      name: direct
+      match:
+        size: largest
+  
+  # Timezone
+  timezone: UTC
+  
+  # Boot configuration
+  grub:
+    timeout: 0
+    reboot_timeout: 5
+  
+  # User data to create directories and copy files
+  user-data:
+    runcmd:
+      # Create roam directory
+      - mkdir -p /opt/wifi-roam
+      - mkdir -p /var/log/wifi-roam
+      # Set proper ownership
+      - chown -R wifiroam:wifiroam /opt/wifi-roam
+      - chown -R wifiroam:wifiroam /var/log/wifi-roam
+      # Make scripts executable
+      - chmod +x /opt/wifi-roam/*.sh
+      
+  # Late commands to run after installation
+  late-commands:
+    # Copy WiFi roaming scripts from ISO to system
+    - cp /cdrom/wifi-roam/* /opt/wifi-roam/ || true
+    - chmod +x /opt/wifi-roam/*.sh
+    - chown -R wifiroam:wifiroam /opt/wifi-roam
+    # Create systemd service for auto-setup on first boot
+    - |
+      cat > /target/etc/systemd/system/wifi-roam-firstboot.service << 'EOF'
+      [Unit]
+      Description=WiFi Roaming First Boot Setup
+      After=multi-user.target
+      Wants=multi-user.target
+      
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/wifi-roam/wifi_roam_setup.sh /opt/wifi-roam/parameters.txt
+      RemainAfterExit=yes
+      TimeoutStartSec=300
+      StandardOutput=journal
+      StandardError=journal
+      
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+    # Enable the first boot service
+    - systemctl --root=/target enable wifi-roam-firstboot.service
+    # Create log directory
+    - mkdir -p /target/var/log/wifi-roam
+    - chown wifiroam:wifiroam /target/var/log/wifi-roam
+    
+  # Power state after installation
+  shutdown: reboot
