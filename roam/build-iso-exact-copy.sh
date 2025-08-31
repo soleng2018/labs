@@ -163,10 +163,19 @@ create_exact_iso() {
     # Remove any existing ISO
     [ -f "$CUSTOM_ISO" ] && rm "$CUSTOM_ISO"
     
-    # Create ISO with absolutely minimal modifications
+    # Create ISO for BOTH legacy and UEFI boot (hybrid)
+    log_info "Creating hybrid ISO (legacy BIOS + UEFI)..."
+    
     xorriso -as mkisofs \
         -V "Ubuntu-Server ${UBUNTU_VERSION} LTS amd64" \
         -r \
+        -J -l \
+        -b boot/grub/i386-pc/eltorito.img \
+        -c boot.catalog \
+        -no-emul-boot \
+        -boot-load-size 4 \
+        -boot-info-table \
+        -eltorito-alt-boot \
         -e EFI/boot/bootx64.efi \
         -no-emul-boot \
         -o "$CUSTOM_ISO" \
