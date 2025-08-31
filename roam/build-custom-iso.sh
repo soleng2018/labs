@@ -10,9 +10,6 @@ set -e
 UBUNTU_VERSION="24.04.3"
 UBUNTU_ISO_NAME="ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 UBUNTU_ISO_URL="https://releases.ubuntu.com/24.04/${UBUNTU_ISO_NAME}"
-WORK_DIR="/home/nile/labs/roam/iso-exact"
-ORIGINAL_ISO="/home/nile/labs/roam/iso-build/$UBUNTU_ISO_NAME"
-CUSTOM_ISO="/home/nile/labs/roam/ubuntu-${UBUNTU_VERSION}-wifi-roaming-server-EXACT.iso"
 
 # Color codes
 RED='\033[0;31m'
@@ -26,6 +23,23 @@ log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# Get script directory and use relative paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORK_DIR="$SCRIPT_DIR/iso-exact"
+ORIGINAL_ISO="$SCRIPT_DIR/iso-build/$UBUNTU_ISO_NAME"
+CUSTOM_ISO="$SCRIPT_DIR/ubuntu-${UBUNTU_VERSION}-wifi-roaming-server-EXACT.iso"
+
+# Verify required files exist
+if [[ ! -f "$SCRIPT_DIR/parameters.txt" ]] || [[ ! -f "$SCRIPT_DIR/wpa_supplicant.conf" ]] || [[ ! -d "$SCRIPT_DIR/custom-iso" ]]; then
+    log_error "Required WiFi roaming files not found in script directory: $SCRIPT_DIR"
+    log_error "Please ensure the following files/directories exist:"
+    log_error "  - parameters.txt"
+    log_error "  - wpa_supplicant.conf" 
+    log_error "  - *.sh scripts (roam_script.sh, speedtest_script.sh, wifi_roam_setup.sh)"
+    log_error "  - custom-iso/ directory with user-data, meta-data, grub.cfg"
+    exit 1
+fi
 
 cleanup() {
     sudo umount "$WORK_DIR/original" 2>/dev/null || true
@@ -108,11 +122,11 @@ customize_filesystem() {
     sudo mount --bind /dev/pts filesystem/dev/pts
     sudo cp /etc/resolv.conf filesystem/etc/resolv.conf
     
-    # Copy WiFi scripts
-    sudo mkdir -p filesystem/opt/wifi-roaming
-    sudo cp /home/nile/labs/roam/parameters.txt filesystem/opt/wifi-roaming/
-    sudo cp /home/nile/labs/roam/*.sh filesystem/opt/wifi-roaming/
-    sudo cp /home/nile/labs/roam/wpa_supplicant.conf filesystem/opt/wifi-roaming/
+    # Copy WiFi scripts  
+    sudo mkdir -p filesystem/opt/wifi-roam
+    sudo cp "$SCRIPT_DIR/parameters.txt" filesystem/opt/wifi-roam/
+    sudo cp "$SCRIPT_DIR"/*.sh filesystem/opt/wifi-roam/
+    sudo cp "$SCRIPT_DIR/wpa_supplicant.conf" filesystem/opt/wifi-roam/
     
     # Install packages
     sudo chroot filesystem apt-get update
@@ -127,7 +141,7 @@ DefaultDependencies=no
 
 [Service]
 Type=oneshot
-ExecStart=/opt/wifi-roaming/wifi_roam_setup.sh
+ExecStart=/opt/wifi-roam/wifi_roam_setup.sh /opt/wifi-roam/parameters.txt
 RemainAfterExit=yes
 
 [Install]
@@ -142,9 +156,9 @@ EOF
 
 add_autoinstall_config() {
     log_info "Adding autoinstall configuration..."
-    cp /home/nile/labs/roam/custom-iso/user-data custom/
-    cp /home/nile/labs/roam/custom-iso/meta-data custom/
-    cp /home/nile/labs/roam/custom-iso/grub.cfg custom/boot/grub/ 2>/dev/null || true
+    cp "$SCRIPT_DIR/custom-iso/user-data" custom/
+    cp "$SCRIPT_DIR/custom-iso/meta-data" custom/
+    cp "$SCRIPT_DIR/custom-iso/grub.cfg" custom/boot/grub/ 2>/dev/null || true
 }
 
 create_exact_iso() {
