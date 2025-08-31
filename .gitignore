@@ -1,0 +1,53 @@
+# Ubuntu ISO files (original and custom) - anywhere in repo
+*.iso
+
+# Build directories and extracted filesystems - roam project
+roam/iso-build/
+roam/iso-exact/
+roam/filesystem/
+roam/original/
+roam/custom/
+
+# Temporary and cache directories
+*.tmp
+*.cache
+.cache/
+temp/
+tmp/
+
+# Log files
+*.log
+logs/
+
+# Backup files created by scripts
+*.backup
+*.backup.*
+*.old
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*~
+.*.swp
+.*.swo
+*.bak
+
+# Verification and debug directories
+verify/
+debug/
+
+# Any other build artifacts
+*.squashfs
+*.img
+build/
+dist/
+
+# Python cache files (if any Python scripts added later)
+__pycache__/
+*.pyc
+*.pyo
+
+# Node modules (if any Node.js tools added later)
+node_modules/
