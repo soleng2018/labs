@@ -491,28 +491,36 @@ create_custom_iso() {
         log_info "Creating UEFI-only bootable ISO..."
         log_info "  Using UEFI boot: $efi_img"
         
-        # Handle different EFI file types
-        if [[ "$efi_img" == *.efi ]]; then
-            # Direct EFI executable
+        # Create UEFI bootable ISO with proper El Torito configuration
+        # First, check if there's an EFI boot image (.img file) we should use instead
+        local efi_boot_img=""
+        if [ -f "boot/grub/efi.img" ]; then
+            efi_boot_img="boot/grub/efi.img"
+        elif [ -f "EFI/boot/efi.img" ]; then
+            efi_boot_img="EFI/boot/efi.img"
+        fi
+        
+        if [ -n "$efi_boot_img" ]; then
+            log_info "Found EFI boot image: $efi_boot_img, using it instead"
             xorriso -as mkisofs \
                 -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
                 -J -l \
                 -eltorito-alt-boot \
-                -e "$efi_img" \
+                -e "$efi_boot_img" \
                 -no-emul-boot \
-                -boot-load-size 4 \
                 -isohybrid-gpt-basdat \
                 -o "$output_iso" \
                 .
         else
-            # EFI image file (.img)
+            # Use direct EFI executable method
+            log_info "Using direct EFI executable method"
             xorriso -as mkisofs \
                 -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
                 -J -l \
+                -c boot.catalog \
                 -eltorito-alt-boot \
                 -e "$efi_img" \
                 -no-emul-boot \
-                -isohybrid-gpt-basdat \
                 -o "$output_iso" \
                 .
         fi
