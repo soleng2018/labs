@@ -373,33 +373,93 @@ create_custom_iso() {
     # Create the new ISO
     cd "$ISO_NEW_DIR"
     
-    # Auto-detect boot files for Ubuntu 24.04 compatibility
-    log_info "Detecting boot configuration..."
+    # Comprehensive boot file detection for all Ubuntu versions
+    log_info "Detecting boot configuration for Ubuntu ${UBUNTU_VERSION}..."
     
+    # First, check if we have actual bootable files (not just directories)
+    local has_bootable_files=false
+    
+    # Check for actual boot files, not just directories
+    if [ -f "boot/grub/efi.img" ] || [ -f "EFI/boot/bootx64.efi" ] || [ -f "isolinux/isolinux.bin" ] || [ -f "boot/isolinux/isolinux.bin" ]; then
+        has_bootable_files=true
+    fi
+    
+    if [ "$has_bootable_files" = false ]; then
+        log_warning "No bootable files found in extracted ISO"
+        
+        # Debug: Show what's actually in the boot directories
+        log_info "Debugging boot directory contents:"
+        [ -d "boot" ] && log_info "Contents of /boot:" && find boot -type f | head -10 | while read -r f; do log_info "  $f"; done
+        [ -d "EFI" ] && log_info "Contents of /EFI:" && find EFI -type f | head -10 | while read -r f; do log_info "  $f"; done
+        [ -d "isolinux" ] && log_info "Contents of /isolinux:" && find isolinux -type f | head -10 | while read -r f; do log_info "  $f"; done
+        
+        log_info "Extracting boot files from original Ubuntu ISO..."
+        
+        local original_iso="${WORK_DIR}/${UBUNTU_ISO_NAME}"
+        local temp_mount="/tmp/ubuntu_iso_mount_$$"
+        
+        mkdir -p "$temp_mount"
+        if sudo mount -o loop,ro "$original_iso" "$temp_mount" 2>/dev/null; then
+            log_info "Copying boot files from original Ubuntu ISO..."
+            
+            # Copy all potential boot directories
+            [ -d "$temp_mount/boot" ] && sudo cp -r "$temp_mount/boot" . && log_info "  ✓ Copied /boot directory"
+            [ -d "$temp_mount/EFI" ] && sudo cp -r "$temp_mount/EFI" . && log_info "  ✓ Copied /EFI directory"
+            [ -d "$temp_mount/isolinux" ] && sudo cp -r "$temp_mount/isolinux" . && log_info "  ✓ Copied /isolinux directory"
+            [ -d "$temp_mount/.disk" ] && sudo cp -r "$temp_mount/.disk" . && log_info "  ✓ Copied /.disk directory"
+            
+            # Copy individual boot files that might be at root level
+            for file in "$temp_mount"/*.cfg "$temp_mount"/*.c32 "$temp_mount"/vmlinuz* "$temp_mount"/initrd*; do
+                [ -f "$file" ] && sudo cp "$file" . && log_info "  ✓ Copied $(basename "$file")"
+            done
+            
+            sudo umount "$temp_mount" 2>/dev/null || true
+            rmdir "$temp_mount" 2>/dev/null || true
+            
+            log_success "Boot files extracted from original ISO"
+        else
+            log_error "Failed to mount original ISO for boot file extraction"
+            rmdir "$temp_mount" 2>/dev/null || true
+        fi
+    fi
+    
+    # Now detect boot files comprehensively
     local isolinux_bin=""
     local boot_cat=""
     local efi_img=""
     
-    # Look for isolinux boot file
-    if [ -f "isolinux/isolinux.bin" ]; then
-        isolinux_bin="isolinux/isolinux.bin"
-        boot_cat="isolinux/boot.cat"
-    elif [ -f "boot/isolinux/isolinux.bin" ]; then
-        isolinux_bin="boot/isolinux/isolinux.bin"  
-        boot_cat="boot/isolinux/boot.cat"
-    elif [ -f "syslinux/isolinux.bin" ]; then
-        isolinux_bin="syslinux/isolinux.bin"
-        boot_cat="syslinux/boot.cat"
-    fi
+    # Enhanced isolinux detection
+    local isolinux_paths=(
+        "isolinux/isolinux.bin"
+        "boot/isolinux/isolinux.bin" 
+        "syslinux/isolinux.bin"
+        "isolinux.bin"
+    )
     
-    # Look for EFI boot file
-    if [ -f "boot/grub/efi.img" ]; then
-        efi_img="boot/grub/efi.img"
-    elif [ -f "EFI/boot/efi.img" ]; then
-        efi_img="EFI/boot/efi.img"
-    elif [ -f "boot/efi.img" ]; then
-        efi_img="boot/efi.img"
-    fi
+    for path in "${isolinux_paths[@]}"; do
+        if [ -f "$path" ]; then
+            isolinux_bin="$path"
+            boot_cat="$(dirname "$path")/boot.cat"
+            [ ! -f "$boot_cat" ] && boot_cat="isolinux/boot.cat"  # fallback
+            break
+        fi
+    done
+    
+    # Enhanced EFI detection  
+    local efi_paths=(
+        "boot/grub/efi.img"
+        "EFI/boot/bootx64.efi"
+        "EFI/boot/grubx64.efi" 
+        "boot/efi.img"
+        "efi.img"
+    )
+    
+    for path in "${efi_paths[@]}"; do
+        if [ -f "$path" ]; then
+            efi_img="$path"
+            break
+        fi
+    done
     
     log_info "Boot files detected:"
     log_info "  Isolinux: ${isolinux_bin:-not found}"
@@ -409,6 +469,9 @@ create_custom_iso() {
     if [ -n "$isolinux_bin" ] && [ -n "$efi_img" ]; then
         # Dual boot (BIOS + UEFI)
         log_info "Creating hybrid BIOS/UEFI bootable ISO..."
+        log_info "  Using BIOS boot: $isolinux_bin"
+        log_info "  Using UEFI boot: $efi_img"
+        
         xorriso -as mkisofs \
             -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
             -J -l -b "$isolinux_bin" \
@@ -422,21 +485,43 @@ create_custom_iso() {
             -isohybrid-gpt-basdat \
             -o "$output_iso" \
             .
+            
     elif [ -n "$efi_img" ]; then
         # UEFI only
         log_info "Creating UEFI-only bootable ISO..."
-        xorriso -as mkisofs \
-            -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
-            -J -l \
-            -eltorito-alt-boot \
-            -e "$efi_img" \
-            -no-emul-boot \
-            -isohybrid-gpt-basdat \
-            -o "$output_iso" \
-            .
+        log_info "  Using UEFI boot: $efi_img"
+        
+        # Handle different EFI file types
+        if [[ "$efi_img" == *.efi ]]; then
+            # Direct EFI executable
+            xorriso -as mkisofs \
+                -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
+                -J -l \
+                -eltorito-alt-boot \
+                -e "$efi_img" \
+                -no-emul-boot \
+                -boot-load-size 4 \
+                -isohybrid-gpt-basdat \
+                -o "$output_iso" \
+                .
+        else
+            # EFI image file (.img)
+            xorriso -as mkisofs \
+                -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
+                -J -l \
+                -eltorito-alt-boot \
+                -e "$efi_img" \
+                -no-emul-boot \
+                -isohybrid-gpt-basdat \
+                -o "$output_iso" \
+                .
+        fi
+        
     elif [ -n "$isolinux_bin" ]; then
         # BIOS only
         log_info "Creating BIOS-only bootable ISO..."
+        log_info "  Using BIOS boot: $isolinux_bin"
+        
         xorriso -as mkisofs \
             -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
             -J -l -b "$isolinux_bin" \
@@ -447,13 +532,24 @@ create_custom_iso() {
             -o "$output_iso" \
             .
     else
-        # No boot files found, create data-only ISO
-        log_warning "No boot files found, creating data-only ISO (not bootable)"
-        xorriso -as mkisofs \
-            -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
-            -J -l \
-            -o "$output_iso" \
-            .
+        # Last resort: Try to make it bootable anyway by analyzing the directory structure
+        log_error "No standard boot files detected"
+        log_info "Analyzing directory structure for alternative boot methods..."
+        
+        # List what we actually have
+        log_info "Available directories:"
+        find . -maxdepth 2 -type d | head -10 | while read -r dir; do
+            log_info "  $dir"
+        done
+        
+        log_info "Available boot-related files:"
+        find . -maxdepth 3 \( -name "*.efi" -o -name "*.img" -o -name "*.bin" -o -name "grub*" \) -type f | head -10 | while read -r file; do
+            log_info "  $file"
+        done
+        
+        log_error "Cannot create bootable ISO - no valid boot configuration found"
+        log_error "This indicates an issue with the Ubuntu ${UBUNTU_VERSION} ISO structure"
+        exit 1
     fi
     
     cd - > /dev/null
