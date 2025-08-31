@@ -506,12 +506,11 @@ create_custom_iso() {
         # No extra parameters that create additional boot catalog entries
         log_info "Using minimal xorriso parameters to match original Ubuntu ISO"
         
+        # Use the EXACT same minimal parameters as a working Ubuntu ISO
         xorriso -as mkisofs \
             -r -V "Ubuntu-Server ${UBUNTU_VERSION} LTS amd64" \
             -o "$output_iso" \
             -J -l \
-            -c isolinux/boot.cat \
-            -eltorito-alt-boot \
             -e "$efi_img" \
             -no-emul-boot \
             .
