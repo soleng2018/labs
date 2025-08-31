@@ -472,19 +472,30 @@ create_custom_iso() {
         log_info "  Using BIOS boot: $isolinux_bin"
         log_info "  Using UEFI boot: $efi_img"
         
-        xorriso -as mkisofs \
-            -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
-            -J -l -b "$isolinux_bin" \
-            -c "$boot_cat" \
-            -no-emul-boot \
-            -boot-load-size 4 \
-            -boot-info-table \
-            -eltorito-alt-boot \
-            -e "$efi_img" \
-            -no-emul-boot \
-            -isohybrid-gpt-basdat \
-            -o "$output_iso" \
-            .
+        # Enhanced hybrid boot parameters for Ubuntu 24.04.3
+        local hybrid_params=()
+        hybrid_params+=(-r -V "WiFi-Roaming-Ubuntu-${UBUNTU_VERSION}")
+        hybrid_params+=(-J -joliet-long)
+        hybrid_params+=(-cache-inodes)
+        
+        # BIOS boot configuration
+        hybrid_params+=(-b "$isolinux_bin")
+        hybrid_params+=(-c "$boot_cat")
+        hybrid_params+=(-no-emul-boot)
+        hybrid_params+=(-boot-load-size 4)
+        hybrid_params+=(-boot-info-table)
+        
+        # UEFI boot configuration
+        hybrid_params+=(-eltorito-alt-boot)
+        hybrid_params+=(-e "$efi_img")
+        hybrid_params+=(-no-emul-boot)
+        
+        # Hybrid MBR/GPT support
+        hybrid_params+=(-isohybrid-gpt-basdat)
+        hybrid_params+=(-isohybrid-apm-hfsplus)
+        
+        log_info "xorriso parameters: ${hybrid_params[*]} -o $output_iso ."
+        xorriso -as mkisofs "${hybrid_params[@]}" -o "$output_iso" .
             
     elif [ -n "$efi_img" ]; then
         # UEFI only
@@ -501,28 +512,43 @@ create_custom_iso() {
         fi
         
         if [ -n "$efi_boot_img" ]; then
-            log_info "Found EFI boot image: $efi_boot_img, using it instead"
+            # Method 1: Using dedicated EFI boot image - most reliable for Ubuntu 24.04.3
+            log_info "Found EFI boot image: $efi_boot_img, using enhanced UEFI configuration"
             xorriso -as mkisofs \
-                -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
-                -J -l \
+                -r -V "WiFi-Roaming-Ubuntu-${UBUNTU_VERSION}" \
+                -J -joliet-long \
+                -cache-inodes \
                 -eltorito-alt-boot \
                 -e "$efi_boot_img" \
                 -no-emul-boot \
+                -append_partition 2 0xef "$efi_boot_img" \
+                -appended_part_as_gpt \
                 -isohybrid-gpt-basdat \
                 -o "$output_iso" \
                 .
         else
-            # Use direct EFI executable method
-            log_info "Using direct EFI executable method"
-            xorriso -as mkisofs \
-                -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
-                -J -l \
-                -c boot.catalog \
-                -eltorito-alt-boot \
-                -e "$efi_img" \
-                -no-emul-boot \
-                -o "$output_iso" \
-                .
+            # Method 2: Direct EFI executable with Ubuntu 24.04.3 compatible parameters
+            log_info "Using direct EFI executable with enhanced UEFI configuration"
+            
+            # Create a proper EFI System Partition structure for Ubuntu 24.04.3
+            local efi_params=()
+            efi_params+=(-r -V "WiFi-Roaming-Ubuntu-${UBUNTU_VERSION}")
+            efi_params+=(-J -joliet-long)
+            efi_params+=(-cache-inodes)
+            
+            # Add proper El Torito configuration for UEFI
+            efi_params+=(-c boot.catalog)
+            efi_params+=(-eltorito-alt-boot)
+            efi_params+=(-e "$efi_img")
+            efi_params+=(-no-emul-boot)
+            
+            # Add GPT and hybrid MBR support
+            efi_params+=(-isohybrid-gpt-basdat)
+            efi_params+=(-isohybrid-apm-hfsplus)
+            
+            # Execute xorriso with proper parameters
+            log_info "xorriso parameters: ${efi_params[*]} -o $output_iso ."
+            xorriso -as mkisofs "${efi_params[@]}" -o "$output_iso" .
         fi
         
     elif [ -n "$isolinux_bin" ]; then
