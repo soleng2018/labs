@@ -43,7 +43,7 @@ Your custom Ubuntu ISO with automated WiFi roaming system is now ready to build.
 
 ### Step 1: Test Your Setup (Optional but Recommended)
 ```bash
-cd /home/shiv/labs/roam
+cd path/to/roam
 ./test-iso-build.sh
 ```
 
@@ -59,7 +59,7 @@ Current settings:
 
 ### Step 3: Build Your Custom ISO
 ```bash
-cd /home/shiv/labs/roam
+cd path/to/roam
 sudo ./build-custom-iso.sh
 ```
 **Note:** Requires sudo, internet connection, and ~8GB free space
