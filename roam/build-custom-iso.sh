@@ -50,15 +50,55 @@ cleanup() {
 
 trap cleanup EXIT
 
+download_ubuntu_iso() {
+    log_info "Checking for Ubuntu $UBUNTU_VERSION ISO..."
+    
+    # Create iso-build directory if it doesn't exist
+    mkdir -p "$SCRIPT_DIR/iso-build"
+    
+    if [ ! -f "$ORIGINAL_ISO" ]; then
+        log_info "Ubuntu ISO not found. Downloading from $UBUNTU_ISO_URL"
+        log_warning "This will take several minutes depending on your internet connection..."
+        
+        # Download with progress
+        if command -v wget >/dev/null 2>&1; then
+            wget --progress=bar:force:noscroll -O "$ORIGINAL_ISO" "$UBUNTU_ISO_URL" || {
+                log_error "Failed to download Ubuntu ISO"
+                rm -f "$ORIGINAL_ISO"
+                exit 1
+            }
+        elif command -v curl >/dev/null 2>&1; then
+            curl -L --progress-bar -o "$ORIGINAL_ISO" "$UBUNTU_ISO_URL" || {
+                log_error "Failed to download Ubuntu ISO"
+                rm -f "$ORIGINAL_ISO"
+                exit 1
+            }
+        else
+            log_error "Neither wget nor curl found. Please install one of them."
+            exit 1
+        fi
+        
+        log_success "Ubuntu ISO downloaded successfully"
+    else
+        log_info "Ubuntu ISO already exists: $ORIGINAL_ISO"
+    fi
+    
+    # Verify ISO integrity
+    local iso_size=$(stat -c%s "$ORIGINAL_ISO" 2>/dev/null || echo "0")
+    if [ "$iso_size" -lt 1000000000 ]; then  # Less than 1GB indicates incomplete download
+        log_error "ISO file appears incomplete (size: $iso_size bytes). Removing and retrying..."
+        rm -f "$ORIGINAL_ISO"
+        download_ubuntu_iso  # Recursive call to retry
+    else
+        log_info "ISO file size looks good: $(du -h "$ORIGINAL_ISO" | cut -f1)"
+    fi
+}
+
 main() {
     log_info "Starting EXACT boot structure copy approach for Ubuntu 24.04.3"
     
-    # Verify original ISO exists
-    if [ ! -f "$ORIGINAL_ISO" ]; then
-        log_error "Original Ubuntu ISO not found: $ORIGINAL_ISO"
-        log_error "Please run the regular build script first to download it."
-        exit 1
-    fi
+    # Download Ubuntu ISO if needed
+    download_ubuntu_iso
     
     # Create work environment
     rm -rf "$WORK_DIR"
