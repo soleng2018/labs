@@ -373,19 +373,88 @@ create_custom_iso() {
     # Create the new ISO
     cd "$ISO_NEW_DIR"
     
-    xorriso -as mkisofs \
-        -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
-        -J -l -b isolinux/isolinux.bin \
-        -c isolinux/boot.cat \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        -eltorito-alt-boot \
-        -e boot/grub/efi.img \
-        -no-emul-boot \
-        -isohybrid-gpt-basdat \
-        -o "$output_iso" \
-        .
+    # Auto-detect boot files for Ubuntu 24.04 compatibility
+    log_info "Detecting boot configuration..."
+    
+    local isolinux_bin=""
+    local boot_cat=""
+    local efi_img=""
+    
+    # Look for isolinux boot file
+    if [ -f "isolinux/isolinux.bin" ]; then
+        isolinux_bin="isolinux/isolinux.bin"
+        boot_cat="isolinux/boot.cat"
+    elif [ -f "boot/isolinux/isolinux.bin" ]; then
+        isolinux_bin="boot/isolinux/isolinux.bin"  
+        boot_cat="boot/isolinux/boot.cat"
+    elif [ -f "syslinux/isolinux.bin" ]; then
+        isolinux_bin="syslinux/isolinux.bin"
+        boot_cat="syslinux/boot.cat"
+    fi
+    
+    # Look for EFI boot file
+    if [ -f "boot/grub/efi.img" ]; then
+        efi_img="boot/grub/efi.img"
+    elif [ -f "EFI/boot/efi.img" ]; then
+        efi_img="EFI/boot/efi.img"
+    elif [ -f "boot/efi.img" ]; then
+        efi_img="boot/efi.img"
+    fi
+    
+    log_info "Boot files detected:"
+    log_info "  Isolinux: ${isolinux_bin:-not found}"
+    log_info "  EFI: ${efi_img:-not found}"
+    
+    # Create ISO with appropriate boot options
+    if [ -n "$isolinux_bin" ] && [ -n "$efi_img" ]; then
+        # Dual boot (BIOS + UEFI)
+        log_info "Creating hybrid BIOS/UEFI bootable ISO..."
+        xorriso -as mkisofs \
+            -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
+            -J -l -b "$isolinux_bin" \
+            -c "$boot_cat" \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -eltorito-alt-boot \
+            -e "$efi_img" \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            -o "$output_iso" \
+            .
+    elif [ -n "$efi_img" ]; then
+        # UEFI only
+        log_info "Creating UEFI-only bootable ISO..."
+        xorriso -as mkisofs \
+            -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
+            -J -l \
+            -eltorito-alt-boot \
+            -e "$efi_img" \
+            -no-emul-boot \
+            -isohybrid-gpt-basdat \
+            -o "$output_iso" \
+            .
+    elif [ -n "$isolinux_bin" ]; then
+        # BIOS only
+        log_info "Creating BIOS-only bootable ISO..."
+        xorriso -as mkisofs \
+            -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
+            -J -l -b "$isolinux_bin" \
+            -c "$boot_cat" \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            -o "$output_iso" \
+            .
+    else
+        # No boot files found, create data-only ISO
+        log_warning "No boot files found, creating data-only ISO (not bootable)"
+        xorriso -as mkisofs \
+            -r -V "WiFi Roaming Ubuntu ${UBUNTU_VERSION}" \
+            -J -l \
+            -o "$output_iso" \
+            .
+    fi
     
     cd - > /dev/null
     
