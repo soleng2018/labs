@@ -367,8 +367,11 @@ create_custom_iso() {
     
     local output_iso="${SCRIPT_DIR}/${CUSTOM_ISO_NAME}"
     
-    # Remove existing custom ISO
-    [ -f "$output_iso" ] && rm "$output_iso"
+    # Remove existing custom ISO (file or directory)
+    if [ -e "$output_iso" ]; then
+        log_info "Removing existing ISO file/directory: $output_iso"
+        rm -rf "$output_iso"
+    fi
     
     # Create the new ISO
     cd "$ISO_NEW_DIR"
