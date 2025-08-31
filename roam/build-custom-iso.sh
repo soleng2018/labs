@@ -246,6 +246,11 @@ customize_filesystem() {
     sudo mount --bind /proc "$filesystem_dir/proc"
     sudo mount --bind /sys "$filesystem_dir/sys"
     
+    # Set up networking for chroot
+    log_info "Configuring network access for chroot..."
+    sudo cp /etc/resolv.conf "$filesystem_dir/etc/resolv.conf" 2>/dev/null || true
+    sudo cp /etc/hosts "$filesystem_dir/etc/hosts" 2>/dev/null || true
+    
     # Verify chroot environment is valid
     log_info "Verifying chroot environment..."
     if [ ! -f "$filesystem_dir/bin/bash" ] && [ ! -f "$filesystem_dir/usr/bin/bash" ]; then
