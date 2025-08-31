@@ -10,8 +10,8 @@ UBUNTU_VERSION="24.04.3"
 UBUNTU_ISO_NAME="ubuntu-${UBUNTU_VERSION}-live-server-amd64.iso"
 UBUNTU_ISO_URL="https://releases.ubuntu.com/24.04/${UBUNTU_ISO_NAME}"
 WORK_DIR="/home/nile/labs/roam/iso-exact"
-ORIGINAL_ISO="$WORK_DIR/../iso-build/$UBUNTU_ISO_NAME"
-CUSTOM_ISO="$WORK_DIR/../ubuntu-${UBUNTU_VERSION}-wifi-roaming-server-EXACT.iso"
+ORIGINAL_ISO="/home/nile/labs/roam/iso-build/$UBUNTU_ISO_NAME"
+CUSTOM_ISO="/home/nile/labs/roam/ubuntu-${UBUNTU_VERSION}-wifi-roaming-server-EXACT.iso"
 
 # Color codes
 RED='\033[0;31m'
@@ -109,9 +109,9 @@ customize_filesystem() {
     
     # Copy WiFi scripts
     sudo mkdir -p filesystem/opt/wifi-roaming
-    sudo cp ../parameters.txt filesystem/opt/wifi-roaming/
-    sudo cp ../*.sh filesystem/opt/wifi-roaming/
-    sudo cp ../wpa_supplicant.conf filesystem/opt/wifi-roaming/
+    sudo cp /home/nile/labs/roam/parameters.txt filesystem/opt/wifi-roaming/
+    sudo cp /home/nile/labs/roam/*.sh filesystem/opt/wifi-roaming/
+    sudo cp /home/nile/labs/roam/wpa_supplicant.conf filesystem/opt/wifi-roaming/
     
     # Install packages
     sudo chroot filesystem apt-get update
@@ -141,9 +141,9 @@ EOF
 
 add_autoinstall_config() {
     log_info "Adding autoinstall configuration..."
-    cp ../custom-iso/user-data custom/
-    cp ../custom-iso/meta-data custom/
-    cp ../custom-iso/grub.cfg custom/boot/grub/ 2>/dev/null || true
+    cp /home/nile/labs/roam/custom-iso/user-data custom/
+    cp /home/nile/labs/roam/custom-iso/meta-data custom/
+    cp /home/nile/labs/roam/custom-iso/grub.cfg custom/boot/grub/ 2>/dev/null || true
 }
 
 create_exact_iso() {
