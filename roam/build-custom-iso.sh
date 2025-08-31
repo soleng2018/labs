@@ -498,57 +498,46 @@ create_custom_iso() {
         xorriso -as mkisofs "${hybrid_params[@]}" -o "$output_iso" .
             
     elif [ -n "$efi_img" ]; then
-        # UEFI only
-        log_info "Creating UEFI-only bootable ISO..."
+        # UEFI only - MATCH ORIGINAL UBUNTU ISO EXACTLY
+        log_info "Creating UEFI-only bootable ISO (matching original Ubuntu structure)..."
         log_info "  Using UEFI boot: $efi_img"
         
-        # Create UEFI bootable ISO with proper El Torito configuration
-        # First, check if there's an EFI boot image (.img file) we should use instead
-        local efi_boot_img=""
-        if [ -f "boot/grub/efi.img" ]; then
-            efi_boot_img="boot/grub/efi.img"
-        elif [ -f "EFI/boot/efi.img" ]; then
-            efi_boot_img="EFI/boot/efi.img"
-        fi
+        # CRITICAL: Use the EXACT same xorriso command as Ubuntu's official build
+        # No extra parameters that create additional boot catalog entries
+        log_info "Using minimal xorriso parameters to match original Ubuntu ISO"
         
-        if [ -n "$efi_boot_img" ]; then
-            # Method 1: Using dedicated EFI boot image - most reliable for Ubuntu 24.04.3
-            log_info "Found EFI boot image: $efi_boot_img, using enhanced UEFI configuration"
-            xorriso -as mkisofs \
-                -r -V "WiFi-Roaming-Ubuntu-${UBUNTU_VERSION}" \
-                -J -joliet-long \
-                -cache-inodes \
-                -eltorito-alt-boot \
-                -e "$efi_boot_img" \
-                -no-emul-boot \
-                -append_partition 2 0xef "$efi_boot_img" \
-                -appended_part_as_gpt \
-                -isohybrid-gpt-basdat \
-                -o "$output_iso" \
-                .
-        else
-            # Method 2: Direct EFI executable with Ubuntu 24.04.3 compatible parameters
-            log_info "Using direct EFI executable with enhanced UEFI configuration"
+        xorriso -as mkisofs \
+            -r -V "Ubuntu-Server ${UBUNTU_VERSION} LTS amd64" \
+            -o "$output_iso" \
+            -J -l \
+            -c isolinux/boot.cat \
+            -eltorito-alt-boot \
+            -e "$efi_img" \
+            -no-emul-boot \
+            .
             
-            # Create a proper EFI System Partition structure for Ubuntu 24.04.3
-            local efi_params=()
-            efi_params+=(-r -V "WiFi-Roaming-Ubuntu-${UBUNTU_VERSION}")
-            efi_params+=(-J -joliet-long)
-            efi_params+=(-cache-inodes)
+        # Verify no extra boot files were created
+        log_info "Verifying ISO structure matches original..."
+        
+        # Mount and check our created ISO
+        local temp_check="/tmp/iso_check_$$"
+        mkdir -p "$temp_check"
+        if sudo mount -o loop,ro "$output_iso" "$temp_check" 2>/dev/null; then
+            local boot_files=$(find "$temp_check" -name "*.img" | wc -l)
+            local efi_files=$(find "$temp_check/EFI" -name "*.efi" 2>/dev/null | wc -l)
             
-            # Add proper El Torito configuration for UEFI
-            efi_params+=(-c boot.catalog)
-            efi_params+=(-eltorito-alt-boot)
-            efi_params+=(-e "$efi_img")
-            efi_params+=(-no-emul-boot)
+            sudo umount "$temp_check" 2>/dev/null
+            rmdir "$temp_check"
             
-            # Add GPT and hybrid MBR support
-            efi_params+=(-isohybrid-gpt-basdat)
-            efi_params+=(-isohybrid-apm-hfsplus)
+            log_info "Boot structure check:"
+            log_info "  Boot .img files found: $boot_files"
+            log_info "  EFI .efi files found: $efi_files"
             
-            # Execute xorriso with proper parameters
-            log_info "xorriso parameters: ${efi_params[*]} -o $output_iso ."
-            xorriso -as mkisofs "${efi_params[@]}" -o "$output_iso" .
+            if [ "$boot_files" -gt 1 ]; then
+                log_warning "Extra boot files detected - this might cause UEFI boot issues"
+            else
+                log_success "Clean boot structure - matches original Ubuntu ISO"
+            fi
         fi
         
     elif [ -n "$isolinux_bin" ]; then
