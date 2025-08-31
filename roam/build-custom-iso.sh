@@ -162,33 +162,53 @@ customize_filesystem() {
     sudo mount --bind /dev/pts filesystem/dev/pts
     sudo cp /etc/resolv.conf filesystem/etc/resolv.conf
     
-    # Copy WiFi scripts  
+    # Copy WiFi scripts with proper permissions
     sudo mkdir -p filesystem/opt/wifi-roam
     sudo cp "$SCRIPT_DIR/parameters.txt" filesystem/opt/wifi-roam/
-    sudo cp "$SCRIPT_DIR"/*.sh filesystem/opt/wifi-roam/
+    sudo cp "$SCRIPT_DIR/wifi_roam_setup.sh" filesystem/opt/wifi-roam/
+    sudo cp "$SCRIPT_DIR/roam_script.sh" filesystem/opt/wifi-roam/
+    sudo cp "$SCRIPT_DIR/speedtest_script.sh" filesystem/opt/wifi-roam/
     sudo cp "$SCRIPT_DIR/wpa_supplicant.conf" filesystem/opt/wifi-roam/
+    
+    # Make scripts executable
+    sudo chmod +x filesystem/opt/wifi-roam/*.sh
+    
+    # Create log directory
+    sudo mkdir -p filesystem/var/log/wifi-roam
     
     # Install packages
     sudo chroot filesystem apt-get update
     sudo chroot filesystem apt-get install -y wpasupplicant dhcpcd5 iw wireless-tools speedtest-cli wget curl systemd
     
-    # Create service
+    # Create systemd service for first boot setup
+    log_info "Creating wifi-roam-firstboot.service..."
     sudo tee filesystem/etc/systemd/system/wifi-roam-firstboot.service > /dev/null << 'EOF'
 [Unit]
 Description=WiFi Roaming First Boot Setup
-After=network.target
-DefaultDependencies=no
+After=multi-user.target
+Before=graphical.target
+DefaultDependencies=yes
+Requires=multi-user.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/wifi-roam/wifi_roam_setup.sh /opt/wifi-roam/parameters.txt
+User=root
+ExecStart=/bin/bash -c 'cd /opt/wifi-roam && ./wifi_roam_setup.sh /opt/wifi-roam/parameters.txt'
 RemainAfterExit=yes
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
     
+    # Enable the service in chroot
     sudo chroot filesystem systemctl enable wifi-roam-firstboot.service
+    
+    # Set proper ownership for wifi-roam directory (will be fixed by the setup script too)
+    sudo chroot filesystem chown -R root:root /opt/wifi-roam
+    sudo chroot filesystem chown -R root:root /var/log/wifi-roam
     
     # Cleanup chroot
     sudo umount filesystem/{dev/pts,dev,proc,sys} || true

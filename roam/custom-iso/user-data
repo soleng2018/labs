@@ -45,9 +45,8 @@ autoinstall:
     - vim
     - nano
     
-  # Disable automatic package updates to prevent interference
-  package_update: false
-  package_upgrade: false
+  # Disable automatic package updates to prevent interference during install
+  # (Updates handled post-installation by the system)
   
   # Storage configuration - use entire disk
   storage:
@@ -59,30 +58,9 @@ autoinstall:
   # Timezone
   timezone: UTC
   
-  # Boot configuration
-  grub:
-    timeout: 0
-    reboot_timeout: 5
+  # Boot configuration handled by installer defaults
   
-  # User data to create directories and copy files
-  user-data:
-    runcmd:
-      # Create roam directory
-      - mkdir -p /opt/wifi-roam
-      - mkdir -p /var/log/wifi-roam
-      # Set proper ownership
-      - chown -R wifiroam:wifiroam /opt/wifi-roam
-      - chown -R wifiroam:wifiroam /var/log/wifi-roam
-      # Make scripts executable
-      - chmod +x /opt/wifi-roam/*.sh
-      
-  # Late commands to run after installation  
-  late-commands:
-    # Create log directory for WiFi roaming
-    - mkdir -p /target/var/log/wifi-roam
-    - chown wifiroam:wifiroam /target/var/log/wifi-roam
-    # Ensure proper permissions on WiFi roam directory
-    - chown -R wifiroam:wifiroam /target/opt/wifi-roam
+  # Directory creation and permissions handled by wifi_roam_setup.sh on first boot
     
   # Power state after installation
   shutdown: reboot
