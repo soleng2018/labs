@@ -19,7 +19,7 @@ autoinstall:
   identity:
     realname: WiFi Roaming User
     username: wifiroam
-    password: $6$IU2pS9knDeqAVGmU$5sHBYrmhpbaDETUaIQnxaVfd3GrkkcuaXXAQTm.6plLb3qYvDssXVDlPoEOflTvviU3eJnBQrLiITWvkK7dQu1
+    password: $6$FspnpTnwGF.Bgzj/$N9mWzRiNB02OGFdATLF254qZvsEnwWEQb9o9paJNWuq4MufxD0RM6645ctNhIj4Wx68m196R6AFoU5sZBQj6g1
     hostname: wifi-roaming-system
   
   # SSH configuration - enable for remote access
