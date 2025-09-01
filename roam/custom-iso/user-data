@@ -4,7 +4,7 @@ autoinstall:
   
   # Early commands to run before installation
   early-commands:
-    - systemctl stop ssh
+    - echo "Starting autoinstall process"
   
   # Locale and keyboard settings
   locale: en_US.UTF-8
@@ -29,6 +29,8 @@ autoinstall:
   
   # Package configuration
   packages:
+    # SSH server for remote access
+    - openssh-server
     # Essential WiFi packages
     - wpasupplicant
     - dhcpcd5
@@ -59,6 +61,12 @@ autoinstall:
   timezone: UTC
   
   # Boot configuration handled by installer defaults
+  
+  # Late commands to run after installation but before reboot
+  late-commands:
+    # Ensure SSH is enabled and will start on boot
+    - curtin in-target -- systemctl enable ssh
+    - curtin in-target -- systemctl enable openssh-server
   
   # Directory creation and permissions handled by wifi_roam_setup.sh on first boot
     

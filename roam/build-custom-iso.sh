@@ -178,7 +178,7 @@ customize_filesystem() {
     
     # Install packages
     sudo chroot filesystem apt-get update
-    sudo chroot filesystem apt-get install -y wpasupplicant dhcpcd5 iw wireless-tools speedtest-cli wget curl systemd
+    sudo chroot filesystem apt-get install -y openssh-server wpasupplicant dhcpcd5 iw wireless-tools speedtest-cli wget curl systemd
     
     # Create systemd service for first boot setup
     log_info "Creating wifi-roam-firstboot.service..."
