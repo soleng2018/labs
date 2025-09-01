@@ -114,11 +114,48 @@ install_packages() {
     log_info "Missing packages: ${packages_missing[*]}"
     log_info "Attempting to install required packages..."
 
-    # Try to update package list (may fail offline)
+    # Check if we have internet connectivity
+    local has_internet=false
+    if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+        has_internet=true
+        log_success "Internet connectivity detected"
+    else
+        log_warning "No internet connectivity - will use CDROM sources if available"
+    fi
+
+    # If we have internet, switch from CDROM to online repositories
+    if [ "$has_internet" = true ] && grep -q "deb cdrom:" /etc/apt/sources.list 2>/dev/null; then
+        log_info "Switching from CDROM to internet repositories..."
+        
+        # Backup original sources.list
+        cp /etc/apt/sources.list /etc/apt/sources.list.backup
+        
+        # Remove CDROM sources and add internet repositories
+        sed -i '/deb cdrom:/d' /etc/apt/sources.list
+        
+        # Ensure we have proper Ubuntu repositories
+        if ! grep -q "deb http://archive.ubuntu.com/ubuntu" /etc/apt/sources.list; then
+            log_info "Adding Ubuntu internet repositories..."
+            cat >> /etc/apt/sources.list << 'EOF'
+
+# Ubuntu repositories
+deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
+deb http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
+EOF
+        fi
+        
+        log_success "Switched to internet repositories"
+    fi
+
+    # Try to update package list
     if apt-get update 2>/dev/null; then
         log_success "Package list updated"
     else
-        log_warning "Failed to update package list (offline installation?)"
+        log_warning "Failed to update package list"
+        if [ "$has_internet" = false ]; then
+            log_info "This is expected without internet connectivity"
+        fi
     fi
 
     # Try to install required packages
