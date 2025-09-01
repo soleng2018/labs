@@ -218,7 +218,15 @@ add_autoinstall_config() {
     log_info "Adding autoinstall configuration..."
     cp "$SCRIPT_DIR/custom-iso/user-data" custom/
     cp "$SCRIPT_DIR/custom-iso/meta-data" custom/
-    cp "$SCRIPT_DIR/custom-iso/grub.cfg" custom/boot/grub/ 2>/dev/null || true
+    
+    # Copy custom GRUB menu (critical for autoinstall)
+    if [ -f "$SCRIPT_DIR/custom-iso/grub.cfg" ]; then
+        cp "$SCRIPT_DIR/custom-iso/grub.cfg" custom/boot/grub/grub.cfg
+        log_success "Custom GRUB menu installed"
+    else
+        log_error "Custom grub.cfg not found at $SCRIPT_DIR/custom-iso/grub.cfg"
+        exit 1
+    fi
 }
 
 create_exact_iso() {
