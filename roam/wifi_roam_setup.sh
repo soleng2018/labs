@@ -254,7 +254,7 @@ configure_wpa_supplicant() {
 # Function to create systemd service for wifi roaming
 create_roaming_service() {
     local service_file="/etc/systemd/system/wifi-roaming.service"
-    local script_dir="$(pwd)"
+    local script_dir="/opt/wifi-roam"
 
     log_info "Creating systemd service for WiFi roaming..."
 
@@ -262,18 +262,21 @@ create_roaming_service() {
     cat > "$service_file" << EOF
 [Unit]
 Description=WiFi Auto Roaming Service
-After=network.target
-Wants=network.target
+After=network-online.target wpa_supplicant.service
+Wants=network-online.target
+Requires=wpa_supplicant.service
 
 [Service]
 Type=simple
-ExecStart=$script_dir/roam_script.sh $SSID $MIN_TIME $MAX_TIME $MIN_SIGNAL $INTERFACE
+ExecStart=$script_dir/roam_script.sh $SSID $MIN_TIME $MAX_TIME $MIN_SIGNAL
 Restart=always
 RestartSec=30
+RestartPreventExitStatus=2
 User=root
 WorkingDirectory=$script_dir
 StandardOutput=journal
 StandardError=journal
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 [Install]
 WantedBy=multi-user.target
@@ -291,7 +294,7 @@ EOF
 # Function to create systemd service for speedtest
 create_speedtest_service() {
     local service_file="/etc/systemd/system/wifi-speedtest.service"
-    local script_dir="$(pwd)"
+    local script_dir="/opt/wifi-roam"
 
     log_info "Creating systemd service for WiFi speedtest..."
 
@@ -299,18 +302,21 @@ create_speedtest_service() {
     cat > "$service_file" << EOF
 [Unit]
 Description=WiFi Speedtest Service
-After=network.target
-Wants=network.target
+After=network-online.target wifi-roaming.service
+Wants=network-online.target
+Requires=wifi-roaming.service
 
 [Service]
 Type=simple
-ExecStart=$script_dir/speedtest_script.sh $SPEEDTEST_MIN_TIME $SPEEDTEST_MAX_TIME $INTERFACE
+ExecStart=$script_dir/speedtest_script.sh $SPEEDTEST_MIN_TIME $SPEEDTEST_MAX_TIME
 Restart=always
 RestartSec=30
+RestartPreventExitStatus=2
 User=root
 WorkingDirectory=$script_dir
 StandardOutput=journal
 StandardError=journal
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 [Install]
 WantedBy=multi-user.target
@@ -882,16 +888,28 @@ enable_services() {
         log_warning "WiFi startup service failed to start, check logs with: journalctl -u wifi-startup.service"
     fi
 
-    # Wait a bit for WiFi to connect
-    sleep 15
+    # Wait longer for WiFi to connect and stabilize
+    log_info "Waiting for WiFi connection to stabilize..."
+    sleep 30
 
-    # Enable and start roaming service
+    # Enable roaming service but don't start it immediately
     systemctl enable wifi-roaming.service
     log_success "WiFi roaming service enabled"
 
-    log_info "Starting WiFi roaming service..."
+    # Start roaming service with a longer delay
+    log_info "Starting WiFi roaming service (with delay for stability)..."
+    sleep 10
     if systemctl start wifi-roaming.service; then
         log_success "WiFi roaming service started"
+        # Give it a moment to initialize
+        sleep 5
+        # Check if it's actually running
+        if systemctl is-active wifi-roaming.service >/dev/null 2>&1; then
+            log_success "WiFi roaming service is active and running"
+        else
+            log_warning "WiFi roaming service started but may not be running properly"
+            log_info "Check logs with: journalctl -u wifi-roaming.service -f"
+        fi
     else
         log_warning "WiFi roaming service failed to start, check logs with: journalctl -u wifi-roaming.service"
     fi

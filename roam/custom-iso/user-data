@@ -67,9 +67,6 @@ autoinstall:
     # Ensure SSH is enabled and will start on boot
     - curtin in-target -- systemctl enable ssh
     - curtin in-target -- systemctl enable openssh-server
-    # Remove CDROM from APT sources and ensure internet repositories are used
-    - curtin in-target -- sed -i '/cdrom:/d' /etc/apt/sources.list
-    - curtin in-target -- apt-get update
   
   # Directory creation and permissions handled by wifi_roam_setup.sh on first boot
     
