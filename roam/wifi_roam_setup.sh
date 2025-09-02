@@ -114,33 +114,50 @@ install_packages() {
     log_info "Missing packages: ${packages_missing[*]}"
     log_info "Attempting to install required packages..."
 
-    # Check if we have internet connectivity
+    # Check if we have internet connectivity (more robust testing)
     local has_internet=false
-    if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+    
+    # Test multiple connectivity methods
+    if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
         has_internet=true
-        log_success "Internet connectivity detected"
+        log_success "Internet connectivity detected (ping 8.8.8.8)"
+    elif ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1; then
+        has_internet=true
+        log_success "Internet connectivity detected (ping 1.1.1.1)"
+    elif nslookup archive.ubuntu.com >/dev/null 2>&1; then
+        has_internet=true
+        log_success "Internet connectivity detected (DNS resolution)"
     else
         log_warning "No internet connectivity - will use CDROM sources if available"
     fi
 
-    # If we have internet, switch from CDROM to online repositories
-    if [ "$has_internet" = true ] && grep -q "deb cdrom:" /etc/apt/sources.list 2>/dev/null; then
+    # If we have internet OR if CDROM sources are broken, switch to online repositories
+    local has_cdrom_sources=false
+    if grep -q "^deb cdrom:" /etc/apt/sources.list 2>/dev/null; then
+        has_cdrom_sources=true
+    fi
+    
+    if [ "$has_internet" = true ] && [ "$has_cdrom_sources" = true ]; then
         log_info "Switching from CDROM to internet repositories..."
         
         # Backup original sources.list
         cp /etc/apt/sources.list /etc/apt/sources.list.backup
         
-        # Remove CDROM sources and add internet repositories
-        sed -i '/deb cdrom:/d' /etc/apt/sources.list
+        # Remove CDROM sources more thoroughly
+        log_info "Removing CDROM sources..."
+        sed -i '/^deb cdrom:/d' /etc/apt/sources.list
+        sed -i '/^deb-src cdrom:/d' /etc/apt/sources.list
+        sed -i '/^# deb cdrom:/d' /etc/apt/sources.list
         
         # Ensure we have proper Ubuntu repositories
         if ! grep -q "deb http://archive.ubuntu.com/ubuntu" /etc/apt/sources.list; then
             log_info "Adding Ubuntu internet repositories..."
             cat >> /etc/apt/sources.list << 'EOF'
 
-# Ubuntu repositories
+# Ubuntu internet repositories (added by wifi_roam_setup.sh)
 deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
 deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu noble-backports main restricted universe multiverse
 deb http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
 EOF
         fi

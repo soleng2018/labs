@@ -169,6 +169,7 @@ customize_filesystem() {
     sudo cp "$SCRIPT_DIR/roam_script.sh" filesystem/opt/wifi-roam/
     sudo cp "$SCRIPT_DIR/speedtest_script.sh" filesystem/opt/wifi-roam/
     sudo cp "$SCRIPT_DIR/wpa_supplicant.conf" filesystem/opt/wifi-roam/
+    sudo cp "$SCRIPT_DIR/switch-to-internet-repos.sh" filesystem/opt/wifi-roam/
     
     # Make scripts executable
     sudo chmod +x filesystem/opt/wifi-roam/*.sh
