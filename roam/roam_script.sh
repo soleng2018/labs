@@ -29,25 +29,76 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Logging configuration
+LOG_DIR="/var/log/wifi-roam"
+ROAM_LOG_FILE="$LOG_DIR/roaming.log"
+DEBUG_LOG_FILE="$LOG_DIR/roaming-debug.log"
+
+# Ensure log directory exists
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+
 # Global variables for discovered BSSIDs
 declare -a AVAILABLE_BSSIDS=()
 declare -a BSSID_SIGNALS=()
 
-# Function to print colored messages
+# Function to get timestamp
+get_timestamp() {
+    date '+%Y-%m-%d %H:%M:%S'
+}
+
+# Function to log to file with timestamp
+log_to_file() {
+    local level="$1"
+    local message="$2"
+    local logfile="$3"
+    
+    # Ensure log file exists and is writable
+    touch "$logfile" 2>/dev/null || return 1
+    
+    # Write to file with timestamp
+    echo "[$(get_timestamp)] [$level] $message" >> "$logfile" 2>/dev/null || true
+}
+
+# Enhanced logging functions that log to both console and file
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    local msg="$1"
+    echo -e "${BLUE}[INFO]${NC} $msg"
+    log_to_file "INFO" "$msg" "$DEBUG_LOG_FILE"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    local msg="$1"
+    echo -e "${GREEN}[SUCCESS]${NC} $msg"
+    log_to_file "SUCCESS" "$msg" "$ROAM_LOG_FILE"
+    log_to_file "SUCCESS" "$msg" "$DEBUG_LOG_FILE"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    local msg="$1"
+    echo -e "${YELLOW}[WARNING]${NC} $msg"
+    log_to_file "WARNING" "$msg" "$ROAM_LOG_FILE"
+    log_to_file "WARNING" "$msg" "$DEBUG_LOG_FILE"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    local msg="$1"
+    echo -e "${RED}[ERROR]${NC} $msg"
+    log_to_file "ERROR" "$msg" "$ROAM_LOG_FILE"
+    log_to_file "ERROR" "$msg" "$DEBUG_LOG_FILE"
+}
+
+# Function to log roaming events (major events only)
+log_roam_event() {
+    local event="$1"
+    local details="$2"
+    local timestamp=$(get_timestamp)
+    
+    # Log to console
+    echo -e "${GREEN}[ROAM EVENT]${NC} $event: $details"
+    
+    # Log to main roaming log
+    log_to_file "ROAM_EVENT" "$event: $details" "$ROAM_LOG_FILE"
+    log_to_file "ROAM_EVENT" "$event: $details" "$DEBUG_LOG_FILE"
 }
 
 # Function to automatically detect wireless interface
@@ -351,8 +402,11 @@ check_bssid_still_available() {
 # Function to perform roaming with verification
 perform_roam() {
     local target_bssid="$1"
+    local current_bssid
+    current_bssid=$(get_current_bssid)
 
     log_info "Attempting to roam to BSSID: $target_bssid"
+    log_roam_event "ROAM_ATTEMPT" "From $current_bssid to $target_bssid on interface $INTERFACE"
 
     # Execute roam command
     if timeout $STATUS_TIMEOUT sudo wpa_cli -i "$INTERFACE" roam "$target_bssid" | grep -q "OK"; then
@@ -368,14 +422,17 @@ perform_roam() {
 
         if [ "$new_bssid" = "$target_bssid" ]; then
             log_success "Successfully roamed and connected to $target_bssid"
+            log_roam_event "ROAM_SUCCESS" "Successfully roamed from $current_bssid to $target_bssid"
             return 0
         else
             log_warning "Roam command succeeded but connected to $new_bssid instead of $target_bssid"
+            log_roam_event "ROAM_PARTIAL" "Attempted $target_bssid but connected to $new_bssid instead"
             # This might still be acceptable if it's the same network
             return 0
         fi
     else
         log_error "Roaming to $target_bssid failed or timed out"
+        log_roam_event "ROAM_FAILED" "Failed to roam from $current_bssid to $target_bssid - command failed or timed out"
         return 1
     fi
 }
@@ -626,6 +683,9 @@ main() {
     log_info "Time range: $min_time - $max_time minutes"
     log_info "Minimum signal: $min_signal dBm"
     log_info "Using interface: $INTERFACE"
+    
+    # Log the script startup event
+    log_roam_event "SCRIPT_START" "Started roaming for SSID '$target_ssid' on interface $INTERFACE (signal threshold: $min_signal dBm, time range: $min_time-$max_time min)"
 
     # Show which values are defaults vs user-provided
     echo ""
@@ -756,12 +816,15 @@ main() {
                 # Show post-roam connection status
                 show_connection_status
                 log_success "Roaming cycle $iteration completed successfully"
+                log_roam_event "CYCLE_COMPLETE" "Iteration $iteration completed - successfully roamed to $target_bssid"
             else
                 log_error "Roaming failed in iteration $iteration, will retry in next cycle"
+                log_roam_event "CYCLE_FAILED" "Iteration $iteration failed - roaming to $target_bssid was unsuccessful"
             fi
         else
             log_error "Target BSSID not available or signal too weak in iteration $iteration"
             log_info "Will refresh BSSID list and try again in next cycle"
+            log_roam_event "TARGET_UNAVAILABLE" "Iteration $iteration skipped - target BSSID $target_bssid not available or signal too weak"
         fi
 
         ((iteration++))
