@@ -293,12 +293,39 @@ discover_bssids_for_ssid() {
             local scan_results
             if scan_results=$(timeout $STATUS_TIMEOUT sudo wpa_cli -i "$INTERFACE" scan_results 2>/dev/null); then
 
-                # Process each line looking for our SSID
+                # Process each line looking for our SSID  
                 local found_any=false
-                while IFS=$'\t' read -r bssid frequency signal flags ssid_from_scan; do
+                while read -r line; do
                     # Skip header line and empty lines
-                    [[ "$bssid" =~ ^bssid ]] && continue
-                    [[ -z "$bssid" ]] && continue
+                    [[ "$line" =~ ^bssid ]] && continue
+                    [[ -z "$line" ]] && continue
+
+                    # Parse scan result line using awk to handle variable spacing
+                    # Format: BSSID FREQ SIGNAL FLAGS... SSID
+                    local bssid frequency signal ssid_from_scan
+                    
+                    # Extract BSSID (field 1), frequency (field 2), signal (field 3)
+                    bssid=$(echo "$line" | awk '{print $1}')
+                    frequency=$(echo "$line" | awk '{print $2}')
+                    signal=$(echo "$line" | awk '{print $3}')
+                    
+                    # Extract SSID - it's the last field only if it doesn't start with '['
+                    local last_field
+                    last_field=$(echo "$line" | awk '{print $NF}')
+                    
+                    if [[ "$last_field" =~ ^\[ ]]; then
+                        # Last field is flags, no SSID present
+                        ssid_from_scan=""
+                    else
+                        # Last field is the SSID
+                        ssid_from_scan="$last_field"
+                    fi
+                    
+                    # Skip if we couldn't parse basic fields
+                    [[ -z "$bssid" || -z "$frequency" || -z "$signal" ]] && continue
+                    
+                    # Debug: log what we parsed
+                    log_info "Parsed: BSSID=$bssid, Freq=$frequency, Signal=$signal, SSID='$ssid_from_scan'"
 
                     # Check if this entry matches our target SSID
                     if [ "$ssid_from_scan" = "$target_ssid" ]; then
@@ -319,12 +346,13 @@ discover_bssids_for_ssid() {
                 done <<< "$scan_results"
 
                 if [ "$found_any" = true ]; then
-                    # Check if we found enough suitable BSSIDs
-                    if [ ${#AVAILABLE_BSSIDS[@]} -ge 2 ]; then
-                        log_success "Found ${#AVAILABLE_BSSIDS[@]} suitable BSSIDs for SSID '$target_ssid'"
+                    # Check if we found any suitable BSSIDs
+                    if [ ${#AVAILABLE_BSSIDS[@]} -ge 1 ]; then
+                        log_success "Found ${#AVAILABLE_BSSIDS[@]} suitable BSSID(s) for SSID '$target_ssid'"
+                        if [ ${#AVAILABLE_BSSIDS[@]} -eq 1 ]; then
+                            log_info "Note: Only 1 BSSID available - roaming will be skipped but connection monitoring will continue"
+                        fi
                         return 0
-                    elif [ ${#AVAILABLE_BSSIDS[@]} -eq 1 ]; then
-                        log_warning "Found only 1 suitable BSSID for SSID '$target_ssid'. Need at least 2 for roaming."
                     fi
                 else
                     log_warning "SSID '$target_ssid' not found in scan results (attempt $attempt)"
@@ -349,14 +377,15 @@ discover_bssids_for_ssid() {
         log_error "  - All available BSSIDs have signal strength below ${min_signal} dBm"
         log_error "  - Network is temporarily unavailable"
         return 1
-    elif [ ${#AVAILABLE_BSSIDS[@]} -eq 1 ]; then
-        log_error "Found only 1 suitable BSSID for SSID '$target_ssid'"
-        log_error "Need at least 2 BSSIDs for roaming functionality"
-        log_error "Available BSSID: ${AVAILABLE_BSSIDS[0]} (${BSSID_SIGNALS[0]} dBm)"
-        return 1
     fi
 
-    return 1
+    # Success - we found at least one suitable BSSID
+    log_success "Discovery completed: ${#AVAILABLE_BSSIDS[@]} suitable BSSID(s) found for SSID '$target_ssid'"
+    if [ ${#AVAILABLE_BSSIDS[@]} -eq 1 ]; then
+        log_info "Note: Only 1 BSSID available - roaming will be skipped but connection monitoring will continue"
+        log_info "Available BSSID: ${AVAILABLE_BSSIDS[0]} (${BSSID_SIGNALS[0]} dBm)"
+    fi
+    return 0
 }
 
 # Function to display discovered BSSIDs
