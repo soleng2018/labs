@@ -534,6 +534,19 @@ check_interface_health() {
 get_next_bssid() {
     local current_bssid="$1"
     local current_index=-1
+    
+    # Check if we have enough BSSIDs for meaningful roaming
+    if [ ${#AVAILABLE_BSSIDS[@]} -eq 0 ]; then
+        log_warning "No BSSIDs available for roaming"
+        echo ""
+        return 1
+    fi
+    
+    if [ ${#AVAILABLE_BSSIDS[@]} -eq 1 ]; then
+        log_warning "Only one BSSID available (${AVAILABLE_BSSIDS[0]}), skipping roaming"
+        echo ""
+        return 1
+    fi
 
     # Find current BSSID index
     for i in "${!AVAILABLE_BSSIDS[@]}"; do
@@ -543,17 +556,33 @@ get_next_bssid() {
         fi
     done
 
-    # Select next BSSID (round-robin)
+    # Select next BSSID (round-robin), ensuring it's different from current
     local next_index
+    local attempts=0
+    local max_attempts=${#AVAILABLE_BSSIDS[@]}
+    
     if [ $current_index -eq -1 ]; then
         # Current BSSID not in our list, start with first one
         next_index=0
     else
         # Move to next BSSID, wrap around if necessary
         next_index=$(((current_index + 1) % ${#AVAILABLE_BSSIDS[@]}))
+        
+        # Ensure we don't select the same BSSID (in case of duplicates in array)
+        while [ "${AVAILABLE_BSSIDS[$next_index]}" = "$current_bssid" ] && [ $attempts -lt $max_attempts ]; do
+            next_index=$(((next_index + 1) % ${#AVAILABLE_BSSIDS[@]}))
+            ((attempts++))
+        done
+        
+        if [ "${AVAILABLE_BSSIDS[$next_index]}" = "$current_bssid" ]; then
+            log_warning "All available BSSIDs are the same as current ($current_bssid), skipping roaming"
+            echo ""
+            return 1
+        fi
     fi
 
     echo "${AVAILABLE_BSSIDS[$next_index]}"
+    return 0
 }
 
 # Function to refresh BSSID list periodically
@@ -783,48 +812,58 @@ main() {
 
         # Select next BSSID for roaming
         local target_bssid
-        target_bssid=$(get_next_bssid "$current_bssid")
-        log_info "Next target BSSID: $target_bssid"
+        if target_bssid=$(get_next_bssid "$current_bssid"); then
+            log_info "Next target BSSID: $target_bssid"
 
-        # Generate random wait time
-        local wait_time
-        wait_time=$(generate_random_time "$min_time" "$max_time")
-        log_info "Randomly selected wait time: $wait_time minutes"
+            # Generate random wait time
+            local wait_time
+            wait_time=$(generate_random_time "$min_time" "$max_time")
+            log_info "Randomly selected wait time: $wait_time minutes"
 
-        # Convert to seconds and wait
-        local wait_seconds=$((wait_time * 60))
-        log_info "Waiting $wait_seconds seconds before next roam..."
+            # Convert to seconds and wait
+            local wait_seconds=$((wait_time * 60))
+            log_info "Waiting $wait_seconds seconds before next roam..."
 
-        # Wait with periodic status updates
-        local elapsed=0
-        local update_interval=300  # Update every 5 minutes
+            # Wait with periodic status updates
+            local elapsed=0
+            local update_interval=300  # Update every 5 minutes
 
-        while [ $elapsed -lt $wait_seconds ]; do
-            local remaining=$((wait_seconds - elapsed))
-            if [ $((elapsed % update_interval)) -eq 0 ] && [ $elapsed -gt 0 ]; then
-                log_info "Still waiting... $(((remaining + 59) / 60)) minutes remaining"
-            fi
-            sleep 60
-            elapsed=$((elapsed + 60))
-        done
+            while [ $elapsed -lt $wait_seconds ]; do
+                local remaining=$((wait_seconds - elapsed))
+                if [ $((elapsed % update_interval)) -eq 0 ] && [ $elapsed -gt 0 ]; then
+                    log_info "Still waiting... $(((remaining + 59) / 60)) minutes remaining"
+                fi
+                sleep 60
+                elapsed=$((elapsed + 60))
+            done
 
-        log_info "Wait time completed. Preparing to roam to: $target_bssid"
+            log_info "Wait time completed. Preparing to roam to: $target_bssid"
 
-        # Check if target BSSID is still available with good signal
-        if check_bssid_still_available "$target_bssid" "$min_signal"; then
-            if perform_roam "$target_bssid"; then
-                # Show post-roam connection status
-                show_connection_status
-                log_success "Roaming cycle $iteration completed successfully"
-                log_roam_event "CYCLE_COMPLETE" "Iteration $iteration completed - successfully roamed to $target_bssid"
+            # Check if target BSSID is still available with good signal
+            if check_bssid_still_available "$target_bssid" "$min_signal"; then
+                if perform_roam "$target_bssid"; then
+                    # Show post-roam connection status
+                    show_connection_status
+                    log_success "Roaming cycle $iteration completed successfully"
+                    log_roam_event "CYCLE_COMPLETE" "Iteration $iteration completed - successfully roamed to $target_bssid"
+                else
+                    log_error "Roaming failed in iteration $iteration, will retry in next cycle"
+                    log_roam_event "CYCLE_FAILED" "Iteration $iteration failed - roaming to $target_bssid was unsuccessful"
+                fi
             else
-                log_error "Roaming failed in iteration $iteration, will retry in next cycle"
-                log_roam_event "CYCLE_FAILED" "Iteration $iteration failed - roaming to $target_bssid was unsuccessful"
+                log_error "Target BSSID not available or signal too weak in iteration $iteration"
+                log_info "Will refresh BSSID list and try again in next cycle"
+                log_roam_event "TARGET_UNAVAILABLE" "Iteration $iteration skipped - target BSSID $target_bssid not available or signal too weak"
             fi
         else
-            log_error "Target BSSID not available or signal too weak in iteration $iteration"
-            log_info "Will refresh BSSID list and try again in next cycle"
-            log_roam_event "TARGET_UNAVAILABLE" "Iteration $iteration skipped - target BSSID $target_bssid not available or signal too weak"
+            # No suitable BSSID for roaming (only one available or all the same)
+            log_info "Skipping roaming in iteration $iteration - insufficient BSSID diversity"
+            log_roam_event "ROAMING_SKIPPED" "Iteration $iteration skipped - only one BSSID available or all BSSIDs are identical"
+            
+            # Wait a shorter time before checking again (maybe more APs will be discovered)
+            local wait_time=5  # 5 minutes
+            log_info "Waiting $wait_time minutes before rechecking BSSID availability..."
+            sleep $((wait_time * 60))
         fi
 
         ((iteration++))
