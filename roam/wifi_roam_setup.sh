@@ -276,7 +276,7 @@ User=root
 WorkingDirectory=$script_dir
 StandardOutput=journal
 StandardError=journal
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 
 [Install]
 WantedBy=multi-user.target
@@ -316,7 +316,7 @@ User=root
 WorkingDirectory=$script_dir
 StandardOutput=journal
 StandardError=journal
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 
 [Install]
 WantedBy=multi-user.target
