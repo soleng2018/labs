@@ -3,7 +3,7 @@
 
 # Network Configuration
 SSID="Alonso-ENT"
-USERNAME="employee"
+USERNAME="sally@nile.com"
 PASSWORD="nilesecure"
 
 # Roaming Configuration

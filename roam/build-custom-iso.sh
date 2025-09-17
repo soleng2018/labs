@@ -26,7 +26,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Get script directory and use relative paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORK_DIR="$SCRIPT_DIR/iso-exact"
+WORK_DIR="$SCRIPT_DIR/iso-build-work-$(date +%s)"
 ORIGINAL_ISO="$SCRIPT_DIR/iso-build/$UBUNTU_ISO_NAME"
 CUSTOM_ISO="$SCRIPT_DIR/ubuntu-${UBUNTU_VERSION}-wifi-roaming-server-EXACT.iso"
 
@@ -45,7 +45,7 @@ cleanup() {
     sudo umount "$WORK_DIR/original" 2>/dev/null || true
     sudo umount "$WORK_DIR/custom" 2>/dev/null || true
     sudo umount "$WORK_DIR/filesystem"/{dev/pts,dev,proc,sys} 2>/dev/null || true
-    sudo rm -rf "$WORK_DIR/original" "$WORK_DIR/custom" 2>/dev/null || true
+    sudo rm -rf "$WORK_DIR" 2>/dev/null || true
 }
 
 trap cleanup EXIT
@@ -101,7 +101,12 @@ main() {
     download_ubuntu_iso
     
     # Create work environment
-    rm -rf "$WORK_DIR"
+    if [ -d "$WORK_DIR" ]; then
+        log_info "Cleaning up existing work directory..."
+        sudo rm -rf "$WORK_DIR" 2>/dev/null || {
+            log_warning "Could not remove existing work directory, continuing anyway..."
+        }
+    fi
     mkdir -p "$WORK_DIR"/{original,custom,filesystem}
     cd "$WORK_DIR"
     
@@ -244,8 +249,15 @@ create_exact_iso() {
     # Use the SIMPLEST possible xorriso command to preserve everything
     log_info "Using minimal xorriso to preserve exact boot structure..."
     
-    # Remove any existing ISO
-    [ -f "$CUSTOM_ISO" ] && rm "$CUSTOM_ISO"
+    # Remove any existing ISO or directory with the same name
+    if [ -f "$CUSTOM_ISO" ]; then
+        log_info "Removing existing ISO file: $CUSTOM_ISO"
+        rm "$CUSTOM_ISO"
+    fi
+    if [ -d "$CUSTOM_ISO" ]; then
+        log_info "Removing existing directory with same name: $CUSTOM_ISO"
+        sudo rm -rf "$CUSTOM_ISO"
+    fi
     
     # Create ISO for BOTH legacy and UEFI boot (hybrid)
     log_info "Creating hybrid ISO (legacy BIOS + UEFI)..."
