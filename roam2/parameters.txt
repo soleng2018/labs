@@ -1,0 +1,19 @@
+# WiFi Roaming Parameters
+# SSID Name with quotes for spaces
+SSID_Name="My WiFi Network"
+
+# Roaming timing parameters (in minutes)
+Min_Time_Roam=5
+Max_Time_Roam=10
+
+# Signal strength threshold for roaming (dBm)
+Min_Signal=-75
+
+# Preferred frequency band
+Preferred_Band="5G"
+
+# Speedtest timing parameters (in minutes)
+Min_Time_Speedtest=5
+Max_Time_Speedtest=10
+
+

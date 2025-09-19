@@ -1,0 +1,24 @@
+# In the roam2 folder create three files
+1. parameters.txt
+2. roam.sh
+3. speedtest.sh
+
+# In parameters.txt add
+1. SSID_Name="My WiFi Network" This should take a SSID Name in quotes e.g. "My WiFi Network". The quotes are needed as there are spaces in the SSID name. 
+2. Min_Time_Roam = A value in minutes e.g 5
+3. Max_Time_Roam = A value in minutes e.g 10 # So the script will randomly choose a value between Min_Time_Roam and Max_Time_Roam and then wait for that time in minutes before roaming
+4. Min_Signal = -75 # Min signal needed to roam between Access Points
+5. Preferred_Band = "5G" # Can be 2.4G or 5G or 6G
+5. Min_Time_Speedtest = A value in minutes e.g 5
+6. Max_Time_Speedtest = A value in minutes e.g 10 # So the script will randomly choose a value between Min_Time_Speedtest and Max_Time_Speedtest and then wait for that time in minutes before running a speedtest
+
+# roam.sh
+1. Ensure the parameters.txt file has the necessary romaning parameters. Validate the values i.e. integer vs string
+2. Automatically detect a wireless interface. Ensure its not wired or loopback. It has to be a wireless interface
+3. If there are more than one interface select any one. IF there are no wifi interfaces found, exit from the script
+4. Use wpa_cli to scan for the SSID_Name defined in parameters.txt on all bands 2.4 Ghz, 5Ghz and 6Ghz
+5. Automatically detect the BSSIDs for the SSID_Name. Filter out the ones that do not meet the Min_Signal value
+6. Roam between between the BSSID based on a randomly selected value between Min_Time_Roam and Max_Time_Roam. Choose the BSSID to roam based on signal strength if there are multiple BSSIDs
+7. There is only one BSSID, do not roam.
+8. Use dhcpcd5 to get an IP address on first connection. Do not try and renew the IP address after a roam. Only renew if needed
+9. Create a log file called roam_debug.log under /var/log/ directory. Log every detail possible. If the file exists append to it.

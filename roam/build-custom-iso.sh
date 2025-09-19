@@ -175,12 +175,22 @@ customize_filesystem() {
     sudo cp "$SCRIPT_DIR/speedtest_script.sh" filesystem/opt/wifi-roam/
     sudo cp "$SCRIPT_DIR/wpa_supplicant.conf" filesystem/opt/wifi-roam/
     sudo cp "$SCRIPT_DIR/switch-to-internet-repos.sh" filesystem/opt/wifi-roam/
+    sudo cp "$SCRIPT_DIR/view_logs.sh" filesystem/opt/wifi-roam/
+    sudo cp "$SCRIPT_DIR/LOGGING_README.md" filesystem/opt/wifi-roam/
     
     # Make scripts executable
     sudo chmod +x filesystem/opt/wifi-roam/*.sh
     
-    # Create log directory
+    # Create log directories and files for roaming and speedtest
     sudo mkdir -p filesystem/var/log/wifi-roam
+    sudo touch filesystem/var/log/wifi-roam/roaming.log
+    sudo touch filesystem/var/log/wifi-roam/roaming-debug.log
+    sudo touch filesystem/var/log/wifi-roam/speedtest.log
+    sudo touch filesystem/var/log/wifi-roam/speedtest-debug.log
+    
+    # Set proper permissions for log files
+    sudo chmod 644 filesystem/var/log/wifi-roam/*.log
+    sudo chown root:root filesystem/var/log/wifi-roam/*.log
     
     # Install packages
     sudo chroot filesystem apt-get update
@@ -212,9 +222,76 @@ EOF
     # Enable the service in chroot
     sudo chroot filesystem systemctl enable wifi-roam-firstboot.service
     
+    # Create systemd service for speedtest script
+    log_info "Creating wifi-speedtest.service..."
+    sudo tee filesystem/etc/systemd/system/wifi-speedtest.service > /dev/null << 'EOF'
+[Unit]
+Description=WiFi Speedtest Service
+After=multi-user.target
+Wants=wifi-roam-firstboot.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/bin/bash -c 'cd /opt/wifi-roam && ./speedtest_script.sh 30 120'
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory=/opt/wifi-roam
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    # Enable the speedtest service
+    sudo chroot filesystem systemctl enable wifi-speedtest.service
+    
+    # Create systemd service for roaming script
+    log_info "Creating wifi-roaming.service..."
+    sudo tee filesystem/etc/systemd/system/wifi-roaming.service > /dev/null << 'EOF'
+[Unit]
+Description=WiFi Roaming Service
+After=multi-user.target
+Wants=wifi-roam-firstboot.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/bin/bash -c 'cd /opt/wifi-roam && ./roam_script.sh'
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+WorkingDirectory=/opt/wifi-roam
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    # Enable the roaming service
+    sudo chroot filesystem systemctl enable wifi-roaming.service
+    
     # Set proper ownership for wifi-roam directory (will be fixed by the setup script too)
     sudo chroot filesystem chown -R root:root /opt/wifi-roam
     sudo chroot filesystem chown -R root:root /var/log/wifi-roam
+    
+    # Create logrotate configuration for wifi-roam logs
+    log_info "Creating logrotate configuration for wifi-roam logs..."
+    sudo tee filesystem/etc/logrotate.d/wifi-roam > /dev/null << 'EOF'
+/var/log/wifi-roam/*.log {
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 644 root root
+    postrotate
+        # No need to restart services as logs are written by scripts
+    endscript
+}
+EOF
     
     # Cleanup chroot
     sudo umount filesystem/{dev/pts,dev,proc,sys} || true
