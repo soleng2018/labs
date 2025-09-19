@@ -5,21 +5,23 @@ Before=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=dbus
-BusName=fi.w1.wpa_supplicant1
-ExecStart=/sbin/wpa_supplicant -u -s -O /run/wpa_supplicant -c /opt/roam/wpa_supplicant.conf -i %i
+Type=simple
+ExecStart=/opt/roam/wpa_supplicant_wrapper.sh
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
-RestartSec=5
+RestartSec=10
 User=root
 Group=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wpa_supplicant
 
 # Security settings
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/run/wpa_supplicant /opt/roam
+ReadWritePaths=/run/wpa_supplicant /opt/roam /var/log
 
 # Environment
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

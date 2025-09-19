@@ -53,11 +53,13 @@ cp speedtest.sh "$INSTALL_DIR/"
 cp parameters.txt "$INSTALL_DIR/"
 cp wpa_supplicant.conf "$INSTALL_DIR/"
 cp configure_wpa.sh "$INSTALL_DIR/"
+cp wpa_supplicant_wrapper.sh "$INSTALL_DIR/"
 
 # Make scripts executable
 chmod +x "$INSTALL_DIR/roam.sh"
 chmod +x "$INSTALL_DIR/speedtest.sh"
 chmod +x "$INSTALL_DIR/configure_wpa.sh"
+chmod +x "$INSTALL_DIR/wpa_supplicant_wrapper.sh"
 
 # Update file paths in scripts to use /opt/roam/
 print_status "Updating file paths in scripts..."
