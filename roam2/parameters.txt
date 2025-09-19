@@ -1,10 +1,10 @@
 # WiFi Roaming Parameters
 # SSID Name with quotes for spaces
-SSID_Name="_DemoCenter-Enterprise"
+SSID_Name="Alonso-ENT"
 
 # Roaming timing parameters (in minutes)
-Min_Time_Roam=5
-Max_Time_Roam=10
+Min_Time_Roam=1
+Max_Time_Roam=2
 
 # Signal strength threshold for roaming (dBm)
 Min_Signal=-75
@@ -13,16 +13,16 @@ Min_Signal=-75
 Preferred_Band="5G"
 
 # Speedtest timing parameters (in minutes)
-Min_Time_Speedtest=5
-Max_Time_Speedtest=10
+Min_Time_Speedtest=1
+Max_Time_Speedtest=2
 
 # WPA Supplicant Configuration Parameters
 # WiFi Interface (will be auto-detected if empty)
 WiFi_Interface=""
 
 # EAP Authentication Parameters
-EAP_Username=""
-EAP_Password=""
+EAP_Username="sally@nile.com"
+EAP_Password="nilesecure"
 
 # Country code for WiFi regulations
 Country_Code="US"
