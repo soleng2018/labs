@@ -511,7 +511,9 @@ select_best_bssid() {
 # Select a different BSSID to roam to (not the current one)
 select_different_bssid() {
     # Get current BSSID from wpa_cli status to ensure accuracy
-    local current_bssid=$(sudo wpa_cli -i "$INTERFACE" status | grep bssid | cut -d= -f2 | tr -d ' ')
+    local wpa_status=$(sudo wpa_cli -i "$INTERFACE" status)
+    local current_bssid=$(echo "$wpa_status" | grep -i bssid | cut -d= -f2 | tr -d ' ')
+    
     if [[ -z "$current_bssid" || "$current_bssid" == "00:00:00:00:00:00" ]]; then
         current_bssid="$CURRENT_BSSID"
     fi
@@ -527,8 +529,13 @@ select_different_bssid() {
     
     for i in "${!BSSIDS[@]}"; do
         log "  Checking BSSID: ${BSSIDS[$i]} (current: $current_bssid)"
+        
+        # Normalize BSSIDs for comparison (lowercase, remove any extra spaces)
+        local bssid_normalized=$(echo "${BSSIDS[$i]}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+        local current_normalized=$(echo "$current_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+        
         # Skip if this is the current BSSID
-        if [[ "${BSSIDS[$i]}" != "$current_bssid" ]]; then
+        if [[ "$bssid_normalized" != "$current_normalized" ]]; then
             available_bssids+=("${BSSIDS[$i]}")
             available_signals+=("${SIGNALS[$i]}")
             available_frequencies+=("${FREQUENCIES[$i]}")
@@ -536,7 +543,7 @@ select_different_bssid() {
             local band=$(get_frequency_band ${FREQUENCIES[$i]})
             log "    -> Available BSSID: ${BSSIDS[$i]}, Signal: ${SIGNALS[$i]} dBm, Frequency: ${FREQUENCIES[$i]} MHz, Band: $band"
         else
-            log "    -> Skipping current BSSID: ${BSSIDS[$i]}"
+            log "    -> Skipping current BSSID: ${BSSIDS[$i]} (matches current: $current_bssid)"
         fi
     done
     
@@ -604,11 +611,21 @@ select_different_bssid() {
 connect_to_bssid() {
     local target_bssid="$1"
     
-    log "DEBUG: connect_to_bssid called with target_bssid=$target_bssid"
-    log "DEBUG: CURRENT_BSSID before comparison: $CURRENT_BSSID"
+    # Normalize BSSIDs for comparison
+    local current_normalized=$(echo "$CURRENT_BSSID" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+    local target_normalized=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
     
-    if [[ "$CURRENT_BSSID" == "$target_bssid" ]]; then
+    if [[ "$current_normalized" == "$target_normalized" ]]; then
         log "Already connected to $target_bssid, skipping roam"
+        return 0
+    fi
+    
+    # Additional safety check - get current BSSID from wpa_cli to double-check
+    local actual_current=$(sudo wpa_cli -i "$INTERFACE" status | grep -i bssid | cut -d= -f2 | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+    local target_check=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+    
+    if [[ "$actual_current" == "$target_check" ]]; then
+        log "Safety check: Already connected to $target_bssid (verified via wpa_cli), skipping roam"
         return 0
     fi
     
@@ -623,7 +640,7 @@ connect_to_bssid() {
         
         # Verify the roam was successful by checking wpa_cli status
         sleep 2
-        local actual_bssid=$(sudo wpa_cli -i "$INTERFACE" status | grep bssid | cut -d= -f2 | tr -d ' ')
+        local actual_bssid=$(sudo wpa_cli -i "$INTERFACE" status | grep -i bssid | cut -d= -f2 | tr -d ' ')
         if [[ -n "$actual_bssid" && "$actual_bssid" != "00:00:00:00:00:00" ]]; then
             CURRENT_BSSID="$actual_bssid"
             log "Verified current BSSID: $CURRENT_BSSID"
@@ -702,7 +719,7 @@ show_network_info() {
     fi
     
     # Show current BSSID if connected
-    local current_bssid=$(sudo wpa_cli -i "$INTERFACE" status | grep bssid | cut -d= -f2)
+    local current_bssid=$(sudo wpa_cli -i "$INTERFACE" status | grep -i bssid | cut -d= -f2)
     if [[ -n "$current_bssid" && "$current_bssid" != "00:00:00:00:00:00" ]]; then
         log "  Current BSSID: $current_bssid"
     else
@@ -969,17 +986,27 @@ roam_loop() {
             local target_bssid=$(select_different_bssid)
             if [[ -n "$target_bssid" ]]; then
                 # Update CURRENT_BSSID before calling connect_to_bssid to ensure accurate comparison
-                CURRENT_BSSID=$(sudo wpa_cli -i "$INTERFACE" status | grep bssid | cut -d= -f2 | tr -d ' ')
+                local wpa_status_main=$(sudo wpa_cli -i "$INTERFACE" status)
+                CURRENT_BSSID=$(echo "$wpa_status_main" | grep -i bssid | cut -d= -f2 | tr -d ' ')
+                
                 if [[ -z "$CURRENT_BSSID" || "$CURRENT_BSSID" == "00:00:00:00:00:00" ]]; then
                     CURRENT_BSSID=""
                 fi
                 
-                if [[ -n "$CURRENT_BSSID" ]]; then
-                    log "Roaming from $CURRENT_BSSID to BSSID: $target_bssid"
+                # Final safety check - ensure we're not trying to roam to the current BSSID
+                local current_check=$(echo "$CURRENT_BSSID" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+                local target_check=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+                
+                if [[ "$current_check" == "$target_check" ]]; then
+                    log "Final safety check: Target BSSID $target_bssid matches current BSSID $CURRENT_BSSID, skipping roam"
                 else
-                    log "Connecting to BSSID: $target_bssid"
+                    if [[ -n "$CURRENT_BSSID" ]]; then
+                        log "Roaming from $CURRENT_BSSID to BSSID: $target_bssid"
+                    else
+                        log "Connecting to BSSID: $target_bssid"
+                    fi
+                    connect_to_bssid "$target_bssid"
                 fi
-                connect_to_bssid "$target_bssid"
             else
                 log "No suitable different BSSID found for roaming"
             fi
@@ -1013,7 +1040,7 @@ main() {
     detect_wireless_interface
     
     # Initialize current BSSID
-    CURRENT_BSSID=$(sudo wpa_cli -i "$INTERFACE" status | grep bssid | cut -d= -f2 | tr -d ' ')
+    CURRENT_BSSID=$(sudo wpa_cli -i "$INTERFACE" status | grep -i bssid | cut -d= -f2 | tr -d ' ')
     if [[ -z "$CURRENT_BSSID" || "$CURRENT_BSSID" == "00:00:00:00:00:00" ]]; then
         CURRENT_BSSID=""
         log "Not currently connected to any BSSID"
