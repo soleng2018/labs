@@ -27,6 +27,102 @@ error_exit() {
     exit 1
 }
 
+# Check and install required tools
+check_required_tools() {
+    log "Checking required tools..."
+    
+    local required_tools=("iw" "iwconfig" "wpa_cli" "dhcpcd" "ip" "grep" "awk" "cut" "tr" "sed")
+    local missing_tools=()
+    local install_command=""
+    
+    # Detect package manager and set install command
+    if command -v apt-get >/dev/null 2>&1; then
+        install_command="apt-get install -y"
+        log "Detected apt package manager"
+    elif command -v yum >/dev/null 2>&1; then
+        install_command="yum install -y"
+        log "Detected yum package manager"
+    elif command -v dnf >/dev/null 2>&1; then
+        install_command="dnf install -y"
+        log "Detected dnf package manager"
+    elif command -v pacman >/dev/null 2>&1; then
+        install_command="pacman -S --noconfirm"
+        log "Detected pacman package manager"
+    elif command -v zypper >/dev/null 2>&1; then
+        install_command="zypper install -y"
+        log "Detected zypper package manager"
+    else
+        error_exit "No supported package manager found (apt, yum, dnf, pacman, zypper)"
+    fi
+    
+    # Check each required tool
+    for tool in "${required_tools[@]}"; do
+        if command -v "$tool" >/dev/null 2>&1; then
+            log "  ✓ $tool: Found"
+        else
+            log "  ✗ $tool: Missing"
+            missing_tools+=("$tool")
+        fi
+    done
+    
+    # If tools are missing, try to install them
+    if [[ ${#missing_tools[@]} -gt 0 ]]; then
+        log "Missing tools: ${missing_tools[*]}"
+        log "Attempting to install missing tools..."
+        
+        # Map tool names to package names
+        local package_map=()
+        for tool in "${missing_tools[@]}"; do
+            case "$tool" in
+                "iw")
+                    package_map+=("wireless-tools")
+                    ;;
+                "iwconfig")
+                    package_map+=("wireless-tools")
+                    ;;
+                "wpa_cli")
+                    package_map+=("wpa_supplicant")
+                    ;;
+                "dhcpcd")
+                    package_map+=("dhcpcd5")
+                    ;;
+                "ip"|"grep"|"awk"|"cut"|"tr"|"sed")
+                    package_map+=("coreutils")
+                    ;;
+                *)
+                    package_map+=("$tool")
+                    ;;
+            esac
+        done
+        
+        # Remove duplicates
+        local unique_packages=($(printf "%s\n" "${package_map[@]}" | sort -u))
+        log "Installing packages: ${unique_packages[*]}"
+        
+        if sudo $install_command "${unique_packages[@]}" >/dev/null 2>&1; then
+            log "Package installation completed"
+            
+            # Verify tools are now available
+            local still_missing=()
+            for tool in "${missing_tools[@]}"; do
+                if command -v "$tool" >/dev/null 2>&1; then
+                    log "  ✓ $tool: Now available"
+                else
+                    still_missing+=("$tool")
+                fi
+            done
+            
+            if [[ ${#still_missing[@]} -gt 0 ]]; then
+                error_exit "Failed to install required tools: ${still_missing[*]}"
+            fi
+        else
+            error_exit "Failed to install required packages. Please install manually: ${unique_packages[*]}"
+        fi
+    else
+        log "All required tools are available"
+    fi
+}
+
 # Load parameters from file
 load_parameters() {
     if [[ ! -f "$PARAMETERS_FILE" ]]; then
@@ -76,17 +172,47 @@ detect_wireless_interface() {
     
     # Get all network interfaces
     interfaces=$(ip link show | grep -E "^[0-9]+:" | awk -F': ' '{print $2}' | grep -v lo)
+    log "Found network interfaces: $interfaces"
     
     wireless_interfaces=()
     for iface in $interfaces; do
-        # Check if interface is wireless (has wireless capabilities)
+        log "Checking interface: $iface"
+        
+        # Check multiple methods to detect wireless interfaces
+        local is_wireless=false
+        
+        # Method 1: Check if iw dev works
         if iw dev "$iface" info >/dev/null 2>&1; then
+            log "  -> iw dev $iface info: SUCCESS"
+            is_wireless=true
+        else
+            log "  -> iw dev $iface info: FAILED"
+        fi
+        
+        # Method 2: Check if iwconfig shows wireless info
+        if iwconfig "$iface" 2>/dev/null | grep -q "IEEE 802.11"; then
+            log "  -> iwconfig $iface: IEEE 802.11 detected"
+            is_wireless=true
+        else
+            log "  -> iwconfig $iface: No IEEE 802.11"
+        fi
+        
+        # Method 3: Check if interface name suggests wireless (wlx, wlan, etc.)
+        if [[ "$iface" =~ ^(wlx|wlan|wlp|wifi) ]]; then
+            log "  -> Interface name suggests wireless: $iface"
+            is_wireless=true
+        fi
+        
+        if [[ "$is_wireless" == "true" ]]; then
             wireless_interfaces+=("$iface")
+            log "  -> Added $iface to wireless interfaces list"
         fi
     done
     
+    log "Wireless interfaces found: ${wireless_interfaces[*]}"
+    
     if [[ ${#wireless_interfaces[@]} -eq 0 ]]; then
-        error_exit "No wireless interfaces found"
+        error_exit "No wireless interfaces found. Available interfaces: $interfaces"
     fi
     
     # Select the first wireless interface
@@ -96,6 +222,14 @@ detect_wireless_interface() {
     if [[ ${#wireless_interfaces[@]} -gt 1 ]]; then
         log "Multiple wireless interfaces found: ${wireless_interfaces[*]}"
         log "Using: $INTERFACE"
+    fi
+    
+    # Verify the selected interface is actually working
+    log "Verifying selected interface $INTERFACE..."
+    if iw dev "$INTERFACE" info >/dev/null 2>&1; then
+        log "Interface verification successful"
+    else
+        log "Warning: Interface verification failed, but proceeding anyway"
     fi
 }
 
@@ -255,11 +389,14 @@ get_bssids() {
 # Get frequency band from frequency in MHz
 get_frequency_band() {
     local freq="$1"
-    if [[ $freq -ge 2400 && $freq -le 2500 ]]; then
+    # Convert to integer to handle decimal values like 5220.0
+    local freq_int=$(echo "$freq" | cut -d. -f1)
+    
+    if [[ $freq_int -ge 2400 && $freq_int -le 2500 ]]; then
         echo "2.4G"
-    elif [[ $freq -ge 5000 && $freq -le 6000 ]]; then
+    elif [[ $freq_int -ge 5000 && $freq_int -le 6000 ]]; then
         echo "5G"
-    elif [[ $freq -ge 6000 && $freq -le 7000 ]]; then
+    elif [[ $freq_int -ge 6000 && $freq_int -le 7000 ]]; then
         echo "6G"
     else
         echo "Unknown"
@@ -466,6 +603,9 @@ select_different_bssid() {
 # Connect to BSSID
 connect_to_bssid() {
     local target_bssid="$1"
+    
+    log "DEBUG: connect_to_bssid called with target_bssid=$target_bssid"
+    log "DEBUG: CURRENT_BSSID before comparison: $CURRENT_BSSID"
     
     if [[ "$CURRENT_BSSID" == "$target_bssid" ]]; then
         log "Already connected to $target_bssid, skipping roam"
@@ -828,10 +968,14 @@ roam_loop() {
             # Select a different BSSID to roam to (not the current one)
             local target_bssid=$(select_different_bssid)
             if [[ -n "$target_bssid" ]]; then
-                # Get current BSSID for logging (not the global variable)
-                local current_bssid_for_log=$(sudo wpa_cli -i "$INTERFACE" status | grep bssid | cut -d= -f2 | tr -d ' ')
-                if [[ -n "$current_bssid_for_log" && "$current_bssid_for_log" != "00:00:00:00:00:00" ]]; then
-                    log "Roaming from $current_bssid_for_log to BSSID: $target_bssid"
+                # Update CURRENT_BSSID before calling connect_to_bssid to ensure accurate comparison
+                CURRENT_BSSID=$(sudo wpa_cli -i "$INTERFACE" status | grep bssid | cut -d= -f2 | tr -d ' ')
+                if [[ -z "$CURRENT_BSSID" || "$CURRENT_BSSID" == "00:00:00:00:00:00" ]]; then
+                    CURRENT_BSSID=""
+                fi
+                
+                if [[ -n "$CURRENT_BSSID" ]]; then
+                    log "Roaming from $CURRENT_BSSID to BSSID: $target_bssid"
                 else
                     log "Connecting to BSSID: $target_bssid"
                 fi
@@ -858,6 +1002,9 @@ main() {
         log "Please run with sudo"
         exit 1
     fi
+    
+    # Check and install required tools
+    check_required_tools
     
     # Load parameters
     load_parameters

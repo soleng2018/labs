@@ -1,6 +1,6 @@
 # WiFi Roaming Parameters
 # SSID Name with quotes for spaces
-SSID_Name="My WiFi Network"
+SSID_Name="_DemoCenter-Enterprise"
 
 # Roaming timing parameters (in minutes)
 Min_Time_Roam=5
