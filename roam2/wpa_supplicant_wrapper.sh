@@ -5,8 +5,11 @@
 
 set -e
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Configuration
-WPA_CONF="/opt/roam/wpa_supplicant.conf"
+WPA_CONF="$SCRIPT_DIR/wpa_supplicant.conf"
 LOG_FILE="/var/log/wpa_supplicant.log"
 
 # Function to detect wireless interface

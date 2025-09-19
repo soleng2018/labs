@@ -16,12 +16,11 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wpa_supplicant
 
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/run/wpa_supplicant /opt/roam /var/log
+# Relaxed security settings for wpa_supplicant compatibility
+NoNewPrivileges=false
+PrivateTmp=false
+ProtectSystem=false
+ProtectHome=false
 
 # Environment
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
