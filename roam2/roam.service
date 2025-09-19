@@ -1,0 +1,31 @@
+[Unit]
+Description=WiFi Roaming Service
+After=network.target network-online.target wpa_supplicant.service
+Wants=network-online.target
+Requires=wpa_supplicant.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/roam
+ExecStart=/opt/roam/roam.sh
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wifi-roam
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log /opt/roam
+
+# Environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=multi-user.target

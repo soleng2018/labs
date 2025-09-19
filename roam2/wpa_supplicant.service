@@ -1,0 +1,28 @@
+[Unit]
+Description=WPA Supplicant for WiFi Authentication
+After=network.target
+Before=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=dbus
+BusName=fi.w1.wpa_supplicant1
+ExecStart=/sbin/wpa_supplicant -u -s -O /run/wpa_supplicant -c /opt/roam/wpa_supplicant.conf -i %i
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+User=root
+Group=root
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/wpa_supplicant /opt/roam
+
+# Environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=multi-user.target

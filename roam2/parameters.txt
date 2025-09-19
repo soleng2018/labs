@@ -16,4 +16,26 @@ Preferred_Band="5G"
 Min_Time_Speedtest=5
 Max_Time_Speedtest=10
 
+# WPA Supplicant Configuration Parameters
+# WiFi Interface (will be auto-detected if empty)
+WiFi_Interface=""
+
+# EAP Authentication Parameters
+EAP_Username=""
+EAP_Password=""
+
+# Country code for WiFi regulations
+Country_Code="US"
+
+# WPA Supplicant Options
+Fast_Reauth=1
+PMF=1
+Update_Config=1
+Scan_Cur_Freq=1
+
+# Network Priority (higher = more preferred)
+Network_Priority=100
+
+# Security Options (WARNING: Disabling certificate validation is insecure)
+Disable_Cert_Validation=0
 
