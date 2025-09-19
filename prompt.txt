@@ -1,4 +1,4 @@
-# In the roam2 folder create three files
+# In the roam2 folder create three file
 1. parameters.txt
 2. roam.sh
 3. speedtest.sh
