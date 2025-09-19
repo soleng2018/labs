@@ -90,6 +90,18 @@ chmod 644 "$SERVICE_DIR/wpa_supplicant.service"
 # Create log directory if it doesn't exist
 mkdir -p "$LOG_DIR"
 
+# Create log files with proper permissions
+print_status "Setting up log files..."
+touch "$LOG_DIR/roam_debug.log"
+touch "$LOG_DIR/speedtest_debug.log"
+touch "$LOG_DIR/wpa_supplicant.log"
+chmod 644 "$LOG_DIR/roam_debug.log"
+chmod 644 "$LOG_DIR/speedtest_debug.log"
+chmod 644 "$LOG_DIR/wpa_supplicant.log"
+chown root:root "$LOG_DIR/roam_debug.log"
+chown root:root "$LOG_DIR/speedtest_debug.log"
+chown root:root "$LOG_DIR/wpa_supplicant.log"
+
 # Reload systemd daemon
 print_status "Reloading systemd daemon..."
 systemctl daemon-reload
