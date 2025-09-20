@@ -512,10 +512,14 @@ select_best_bssid() {
 select_different_bssid() {
     # Get current BSSID from wpa_cli status to ensure accuracy
     local wpa_status=$(sudo wpa_cli -i "$INTERFACE" status)
+    log "DEBUG: wpa_cli status in select_different_bssid: $wpa_status"
+    
     local current_bssid=$(echo "$wpa_status" | grep -i bssid | cut -d= -f2 | tr -d ' ')
+    log "DEBUG: Parsed current_bssid in select_different_bssid: '$current_bssid'"
     
     if [[ -z "$current_bssid" || "$current_bssid" == "00:00:00:00:00:00" ]]; then
         current_bssid="$CURRENT_BSSID"
+        log "DEBUG: Using fallback current_bssid: '$current_bssid'"
     fi
     
     log "Selecting different BSSID for roaming (current: $current_bssid):"
