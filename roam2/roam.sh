@@ -524,15 +524,42 @@ select_best_bssid() {
 # Select a different BSSID to roam to (not the current one)
 select_different_bssid() {
     # Get current BSSID from wpa_cli status to ensure accuracy
-    local wpa_status=$(sudo wpa_cli -i "$INTERFACE" status)
-    log "DEBUG: wpa_cli status in select_different_bssid: $wpa_status"
+    local wpa_status=$(timeout 5 sudo wpa_cli -i "$INTERFACE" status 2>/dev/null)
+    if [[ $? -eq 124 ]]; then
+        log "DEBUG: wpa_cli status timed out, using fallback method"
+        wpa_status=""
+    else
+        log "DEBUG: wpa_cli status in select_different_bssid: $wpa_status"
+    fi
     
-    local current_bssid=$(echo "$wpa_status" | grep -i bssid | cut -d= -f2 | tr -d ' ')
-    log "DEBUG: Parsed current_bssid in select_different_bssid: '$current_bssid'"
+    local current_bssid=""
+    if [[ -n "$wpa_status" ]]; then
+        current_bssid=$(echo "$wpa_status" | grep -i bssid | cut -d= -f2 | tr -d ' ')
+        log "DEBUG: Parsed current_bssid in select_different_bssid: '$current_bssid'"
+    fi
     
     if [[ -z "$current_bssid" || "$current_bssid" == "00:00:00:00:00:00" ]]; then
-        current_bssid="$CURRENT_BSSID"
+        # Try alternative method using iw dev
+        current_bssid=$(iw dev "$INTERFACE" link | grep "Connected to" | awk '{print $3}' | tr -d ' ')
+        if [[ -z "$current_bssid" ]]; then
+            # Try iwconfig as another fallback
+            current_bssid=$(iwconfig "$INTERFACE" 2>/dev/null | grep "Access Point:" | awk '{print $6}' | tr -d ' ')
+            if [[ -z "$current_bssid" ]]; then
+                current_bssid="$CURRENT_BSSID"
+            fi
+        fi
         log "DEBUG: Using fallback current_bssid: '$current_bssid'"
+    fi
+    
+    # If we still don't have a current BSSID, try to get it from the scan results
+    if [[ -z "$current_bssid" || "$current_bssid" == "00:00:00:00:00:00" ]]; then
+        log "DEBUG: No current BSSID detected, checking if we're actually connected..."
+        # Check if we're actually connected by looking for associated BSS in scan
+        local associated_bssid=$(iw dev "$INTERFACE" scan | grep -A 1 "associated" | grep "BSS" | awk '{print $2}' | head -1)
+        if [[ -n "$associated_bssid" ]]; then
+            current_bssid="$associated_bssid"
+            log "DEBUG: Found associated BSSID from scan: '$current_bssid'"
+        fi
     fi
     
     log "Selecting different BSSID for roaming (current: $current_bssid):"
@@ -543,6 +570,22 @@ select_different_bssid() {
     local available_signals=()
     local available_frequencies=()
     local available_indices=()
+    
+    # If we still don't have a current BSSID, try to detect it from the scan results
+    if [[ -z "$current_bssid" || "$current_bssid" == "00:00:00:00:00:00" ]]; then
+        log "DEBUG: Attempting to detect current BSSID from scan results..."
+        # Look for the BSSID with the strongest signal as it's likely the current one
+        local best_signal_index=0
+        local best_signal=${SIGNALS[0]}
+        for i in "${!SIGNALS[@]}"; do
+            if [[ ${SIGNALS[$i]} -gt $best_signal ]]; then
+                best_signal=${SIGNALS[$i]}
+                best_signal_index=$i
+            fi
+        done
+        current_bssid="${BSSIDS[$best_signal_index]}"
+        log "DEBUG: Assuming current BSSID is strongest signal: $current_bssid (${SIGNALS[$best_signal_index]} dBm)"
+    fi
     
     for i in "${!BSSIDS[@]}"; do
         log "  Checking BSSID: ${BSSIDS[$i]} (current: $current_bssid)"
@@ -638,7 +681,7 @@ connect_to_bssid() {
     fi
     
     # Additional safety check - get current BSSID from wpa_cli to double-check
-    local actual_current=$(sudo wpa_cli -i "$INTERFACE" status | grep -i bssid | cut -d= -f2 | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+    local actual_current=$(timeout 5 sudo wpa_cli -i "$INTERFACE" status 2>/dev/null | grep -i bssid | cut -d= -f2 | tr -d ' ' | tr '[:upper:]' '[:lower:]')
     local target_check=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
     
     if [[ "$actual_current" == "$target_check" ]]; then
@@ -646,8 +689,9 @@ connect_to_bssid() {
         return 0
     fi
     
-    # Use wpa_cli to roam
-    if sudo wpa_cli -i "$INTERFACE" roam "$target_bssid" >/dev/null 2>&1; then
+    # Use wpa_cli to roam with timeout
+    log "Attempting to roam to $target_bssid..."
+    if timeout 10 sudo wpa_cli -i "$INTERFACE" roam "$target_bssid" >/dev/null 2>&1; then
         if [[ -n "$CURRENT_BSSID" ]]; then
             log "Successfully roamed from $CURRENT_BSSID to $target_bssid"
         else
@@ -656,11 +700,20 @@ connect_to_bssid() {
         CURRENT_BSSID="$target_bssid"
         
         # Verify the roam was successful by checking wpa_cli status
-        sleep 2
-        local actual_bssid=$(sudo wpa_cli -i "$INTERFACE" status | grep -i bssid | cut -d= -f2 | tr -d ' ')
+        sleep 3
+        local actual_bssid=$(timeout 5 sudo wpa_cli -i "$INTERFACE" status 2>/dev/null | grep -i bssid | cut -d= -f2 | tr -d ' ')
         if [[ -n "$actual_bssid" && "$actual_bssid" != "00:00:00:00:00:00" ]]; then
             CURRENT_BSSID="$actual_bssid"
             log "Verified current BSSID: $CURRENT_BSSID"
+        else
+            # Try alternative verification method
+            actual_bssid=$(iw dev "$INTERFACE" link | grep "Connected to" | awk '{print $3}' | tr -d ' ')
+            if [[ -n "$actual_bssid" ]]; then
+                CURRENT_BSSID="$actual_bssid"
+                log "Verified current BSSID via iw: $CURRENT_BSSID"
+            else
+                log "Warning: Could not verify BSSID after roam"
+            fi
         fi
         
         # Check and manage IP address after roam
@@ -687,7 +740,12 @@ connect_to_bssid() {
         
         return 0
     else
-        log "Failed to roam to $target_bssid"
+        local exit_code=$?
+        if [[ $exit_code -eq 124 ]]; then
+            log "Failed to roam to $target_bssid (timeout)"
+        else
+            log "Failed to roam to $target_bssid (exit code: $exit_code)"
+        fi
         return 1
     fi
 }
