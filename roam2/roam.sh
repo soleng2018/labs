@@ -413,36 +413,49 @@ check_and_renew_ip() {
     
     if [[ -n "$ip_address" && "$force_renew" != "true" ]]; then
         log "IP address already assigned: $ip_address"
-        return 0
+        
+        # Test if the IP is actually working by pinging the gateway
+        local gateway=$(ip route | grep default | grep "$interface" | awk '{print $3}' | head -1)
+        if [[ -n "$gateway" ]]; then
+            log "Testing IP connectivity by pinging gateway: $gateway"
+            if ping -c 1 -W 2 "$gateway" >/dev/null 2>&1; then
+                log "IP address is working correctly, no renewal needed"
+                return 0
+            else
+                log "IP address appears invalid (gateway unreachable), attempting to renew..."
+            fi
+        else
+            log "No gateway found, IP renewal may be needed"
+        fi
     fi
     
     if [[ -z "$ip_address" || "$force_renew" == "true" ]]; then
         log "No IP address found or renewal requested, attempting to renew..."
+    fi
+    
+    # Try to renew IP address
+    if sudo dhcpcd "$interface" >/dev/null 2>&1; then
+        log "Running dhcpcd for IP renewal..."
+        sleep 3  # Wait for IP assignment
         
-        # Try to renew IP address
-        if sudo dhcpcd "$interface" >/dev/null 2>&1; then
-            log "Running dhcpcd for IP renewal..."
-            sleep 3  # Wait for IP assignment
+        # Check again for IP address
+        ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
+        if [[ -n "$ip_address" ]]; then
+            log "IP address renewed successfully: $ip_address"
             
-            # Check again for IP address
-            ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
-            if [[ -n "$ip_address" ]]; then
-                log "IP address renewed successfully: $ip_address"
-                
-                # Show network details
-                local gateway=$(ip route | grep default | grep "$interface" | awk '{print $3}' | head -1)
-                local dns_servers=$(grep nameserver /etc/resolv.conf | awk '{print $2}' | tr '\n' ' ')
-                log "  Gateway: ${gateway:-'Not found'}"
-                log "  DNS servers: ${dns_servers:-'Not found'}"
-                return 0
-            else
-                log "Warning: IP address renewal failed"
-                return 1
-            fi
+            # Show network details
+            local gateway=$(ip route | grep default | grep "$interface" | awk '{print $3}' | head -1)
+            local dns_servers=$(grep nameserver /etc/resolv.conf | awk '{print $2}' | tr '\n' ' ')
+            log "  Gateway: ${gateway:-'Not found'}"
+            log "  DNS servers: ${dns_servers:-'Not found'}"
+            return 0
         else
-            log "Warning: Failed to run dhcpcd for IP renewal"
+            log "Warning: IP address renewal failed"
             return 1
         fi
+    else
+        log "Warning: Failed to run dhcpcd for IP renewal"
+        return 1
     fi
 }
 
