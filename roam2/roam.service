@@ -17,12 +17,12 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wifi-roam
 
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/log /opt/roam
+# Security settings - relaxed for network operations
+NoNewPrivileges=false
+PrivateTmp=false
+ProtectSystem=false
+ProtectHome=false
+ReadWritePaths=/var/log /opt/roam /var/lib/dhcp /var/run
 
 # Environment
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

@@ -453,17 +453,7 @@ check_and_renew_ip() {
     # Method 1: Try dhcpcd control command (if dhcpcd daemon is running)
     local renewal_successful=false
     
-    # Check if /run is writable first
-    local run_writable=false
-    if touch /run/test_write 2>/dev/null; then
-        rm -f /run/test_write 2>/dev/null
-        run_writable=true
-        log "Filesystem /run is writable, can use dhcpcd"
-    else
-        log "Filesystem /run is read-only, will use dhclient instead of dhcpcd"
-    fi
-    
-    if command -v dhcpcd >/dev/null 2>&1 && [[ "$run_writable" == "true" ]]; then
+    if command -v dhcpcd >/dev/null 2>&1; then
         # Check if dhcpcd daemon is running (look for any dhcpcd process)
         if pgrep -f dhcpcd >/dev/null 2>&1; then
             log "dhcpcd daemon is running, using control commands..."
@@ -561,13 +551,9 @@ check_and_renew_ip() {
         fi
     fi
     
-    # Method 2: Try dhclient (primary method if /run is read-only, alternative otherwise)
+    # Method 2: Try dhclient as alternative
     if [[ "$renewal_successful" != "true" ]] && command -v dhclient >/dev/null 2>&1; then
-        if [[ "$run_writable" != "true" ]]; then
-            log "Using dhclient as primary method (read-only filesystem)"
-        else
-            log "Using dhclient as alternative method"
-        fi
+        log "Using dhclient as alternative method"
         
         # Ensure interface is up before trying dhclient
         log "Bringing interface up before dhclient..."
