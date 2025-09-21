@@ -585,17 +585,34 @@ check_and_renew_ip() {
         sleep 2
         
         # Request new IP with dhclient
-        log "Running: dhclient $interface"
-        local dhclient_output=$(run_cmd dhclient "$interface" 2>&1)
+        log "Running: timeout 30 dhclient -v $interface"
+        local dhclient_output=$(timeout 30 run_cmd dhclient -v "$interface" 2>&1)
         local dhclient_exit_code=$?
         
         if [[ $dhclient_exit_code -eq 0 ]]; then
             log "dhclient renewal command successful"
-            log "dhclient output: $dhclient_output"
+            if [[ -n "$dhclient_output" ]]; then
+                log "dhclient output: $dhclient_output"
+            else
+                log "dhclient output: (empty)"
+            fi
+            renewal_successful=true
+        elif [[ $dhclient_exit_code -eq 124 ]]; then
+            log "dhclient timed out after 30 seconds"
+            if [[ -n "$dhclient_output" ]]; then
+                log "dhclient output: $dhclient_output"
+            else
+                log "dhclient output: (empty)"
+            fi
+            # Don't mark as failed yet, let verification check
             renewal_successful=true
         else
             log "dhclient renewal command failed with exit code $dhclient_exit_code"
-            log "dhclient output: $dhclient_output"
+            if [[ -n "$dhclient_output" ]]; then
+                log "dhclient output: $dhclient_output"
+            else
+                log "dhclient output: (empty)"
+            fi
         fi
     fi
     
