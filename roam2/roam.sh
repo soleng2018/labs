@@ -543,7 +543,7 @@ select_different_bssid() {
         current_bssid=$(iw dev "$INTERFACE" link | grep "Connected to" | awk '{print $3}' | tr -d ' ')
         if [[ -z "$current_bssid" ]]; then
             # Try iwconfig as another fallback
-            current_bssid=$(iwconfig "$INTERFACE" 2>/dev/null | grep "Access Point:" | awk '{print $6}' | tr -d ' ')
+            current_bssid=$(iwconfig "$INTERFACE" 2>/dev/null | grep "Access Point:" | awk '{print $NF}' | tr -d ' ')
             if [[ -z "$current_bssid" ]]; then
                 current_bssid="$CURRENT_BSSID"
             fi
@@ -691,29 +691,68 @@ connect_to_bssid() {
     
     # Use wpa_cli to roam with timeout
     log "Attempting to roam to $target_bssid..."
-    if timeout 10 sudo wpa_cli -i "$INTERFACE" roam "$target_bssid" >/dev/null 2>&1; then
+    local roam_exit_code=0
+    timeout 10 sudo wpa_cli -i "$INTERFACE" roam "$target_bssid" >/dev/null 2>&1 || roam_exit_code=$?
+    
+    # Wait a moment for the roam to complete
+    sleep 3
+    
+    # Check if the roam was actually successful regardless of wpa_cli exit code
+    local actual_bssid=""
+    local roam_successful=false
+    
+    # Method 1: Check wpa_cli status
+    actual_bssid=$(timeout 5 sudo wpa_cli -i "$INTERFACE" status 2>/dev/null | grep -i bssid | cut -d= -f2 | tr -d ' ')
+    if [[ -n "$actual_bssid" && "$actual_bssid" != "00:00:00:00:00:00" ]]; then
+        # Normalize for comparison
+        local actual_normalized=$(echo "$actual_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+        local target_normalized=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+        
+        if [[ "$actual_normalized" == "$target_normalized" ]]; then
+            roam_successful=true
+            log "Roam successful - connected to target BSSID: $actual_bssid"
+        else
+            log "Roam completed but connected to different BSSID: $actual_bssid (expected: $target_bssid)"
+        fi
+    else
+        # Method 2: Try alternative verification using iw
+        actual_bssid=$(iw dev "$INTERFACE" link | grep "Connected to" | awk '{print $3}' | tr -d ' ')
+        if [[ -n "$actual_bssid" ]]; then
+            # Normalize for comparison
+            local actual_normalized=$(echo "$actual_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+            local target_normalized=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+            
+            if [[ "$actual_normalized" == "$target_normalized" ]]; then
+                roam_successful=true
+                log "Roam successful - connected to target BSSID via iw: $actual_bssid"
+            else
+                log "Roam completed but connected to different BSSID via iw: $actual_bssid (expected: $target_bssid)"
+            fi
+        else
+            # Method 3: Try iwconfig as final fallback
+            actual_bssid=$(iwconfig "$INTERFACE" 2>/dev/null | grep "Access Point:" | awk '{print $NF}' | tr -d ' ')
+            if [[ -n "$actual_bssid" ]]; then
+                # Normalize for comparison
+                local actual_normalized=$(echo "$actual_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+                local target_normalized=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+                
+                if [[ "$actual_normalized" == "$target_normalized" ]]; then
+                    roam_successful=true
+                    log "Roam successful - connected to target BSSID via iwconfig: $actual_bssid"
+                else
+                    log "Roam completed but connected to different BSSID via iwconfig: $actual_bssid (expected: $target_bssid)"
+                fi
+            fi
+        fi
+    fi
+    
+    if [[ "$roam_successful" == "true" ]]; then
+        CURRENT_BSSID="$actual_bssid"
+        
         if [[ -n "$CURRENT_BSSID" ]]; then
             log "Successfully roamed from $CURRENT_BSSID to $target_bssid"
         else
             log "Successfully connected to $target_bssid"
-        fi
-        CURRENT_BSSID="$target_bssid"
-        
-        # Verify the roam was successful by checking wpa_cli status
-        sleep 3
-        local actual_bssid=$(timeout 5 sudo wpa_cli -i "$INTERFACE" status 2>/dev/null | grep -i bssid | cut -d= -f2 | tr -d ' ')
-        if [[ -n "$actual_bssid" && "$actual_bssid" != "00:00:00:00:00:00" ]]; then
-            CURRENT_BSSID="$actual_bssid"
-            log "Verified current BSSID: $CURRENT_BSSID"
-        else
-            # Try alternative verification method
-            actual_bssid=$(iw dev "$INTERFACE" link | grep "Connected to" | awk '{print $3}' | tr -d ' ')
-            if [[ -n "$actual_bssid" ]]; then
-                CURRENT_BSSID="$actual_bssid"
-                log "Verified current BSSID via iw: $CURRENT_BSSID"
-            else
-                log "Warning: Could not verify BSSID after roam"
-            fi
         fi
         
         # Check and manage IP address after roam
@@ -740,11 +779,11 @@ connect_to_bssid() {
         
         return 0
     else
-        local exit_code=$?
-        if [[ $exit_code -eq 124 ]]; then
+        # Roam failed - report the original wpa_cli exit code
+        if [[ $roam_exit_code -eq 124 ]]; then
             log "Failed to roam to $target_bssid (timeout)"
         else
-            log "Failed to roam to $target_bssid (exit code: $exit_code)"
+            log "Failed to roam to $target_bssid (exit code: $roam_exit_code)"
         fi
         return 1
     fi
