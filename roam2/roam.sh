@@ -575,10 +575,18 @@ check_and_renew_ip() {
         
         # Release old IP
         log "Releasing old IP with dhclient..."
-        if run_cmd dhclient -r "$interface" >/dev/null 2>&1; then
-            log "Released old IP with dhclient"
+        if [[ $EUID -eq 0 ]]; then
+            if dhclient -r "$interface" >/dev/null 2>&1; then
+                log "Released old IP with dhclient"
+            else
+                log "No old IP to release (or release failed)"
+            fi
         else
-            log "No old IP to release (or release failed)"
+            if sudo dhclient -r "$interface" >/dev/null 2>&1; then
+                log "Released old IP with dhclient"
+            else
+                log "No old IP to release (or release failed)"
+            fi
         fi
         
         # Wait a moment before requesting new IP
@@ -586,8 +594,13 @@ check_and_renew_ip() {
         
         # Request new IP with dhclient
         log "Running: timeout 30 dhclient -v $interface"
-        local dhclient_output=$(timeout 30 run_cmd dhclient -v "$interface" 2>&1)
-        local dhclient_exit_code=$?
+        if [[ $EUID -eq 0 ]]; then
+            local dhclient_output=$(timeout 30 dhclient -v "$interface" 2>&1)
+            local dhclient_exit_code=$?
+        else
+            local dhclient_output=$(timeout 30 sudo dhclient -v "$interface" 2>&1)
+            local dhclient_exit_code=$?
+        fi
         
         if [[ $dhclient_exit_code -eq 0 ]]; then
             log "dhclient renewal command successful"
