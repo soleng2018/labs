@@ -21,6 +21,17 @@ log() {
     echo "$message" | sudo tee -a "$LOG_FILE" > /dev/null 2>&1
 }
 
+# Function to run commands with or without sudo based on privileges
+run_cmd() {
+    if [[ $EUID -eq 0 ]]; then
+        # Running as root, no need for sudo
+        "$@"
+    else
+        # Not running as root, use sudo
+        sudo "$@"
+    fi
+}
+
 # Error handling
 error_exit() {
     log "ERROR: $1"
@@ -442,7 +453,17 @@ check_and_renew_ip() {
     # Method 1: Try dhcpcd control command (if dhcpcd daemon is running)
     local renewal_successful=false
     
-    if command -v dhcpcd >/dev/null 2>&1; then
+    # Check if /run is writable first
+    local run_writable=false
+    if touch /run/test_write 2>/dev/null; then
+        rm -f /run/test_write 2>/dev/null
+        run_writable=true
+        log "Filesystem /run is writable, can use dhcpcd"
+    else
+        log "Filesystem /run is read-only, will use dhclient instead of dhcpcd"
+    fi
+    
+    if command -v dhcpcd >/dev/null 2>&1 && [[ "$run_writable" == "true" ]]; then
         # Check if dhcpcd daemon is running (look for any dhcpcd process)
         if pgrep -f dhcpcd >/dev/null 2>&1; then
             log "dhcpcd daemon is running, using control commands..."
@@ -540,28 +561,41 @@ check_and_renew_ip() {
         fi
     fi
     
-    # Method 2: Try dhclient as alternative
+    # Method 2: Try dhclient (primary method if /run is read-only, alternative otherwise)
     if [[ "$renewal_successful" != "true" ]] && command -v dhclient >/dev/null 2>&1; then
-        log "Trying dhclient as alternative..."
+        if [[ "$run_writable" != "true" ]]; then
+            log "Using dhclient as primary method (read-only filesystem)"
+        else
+            log "Using dhclient as alternative method"
+        fi
         
         # Ensure interface is up before trying dhclient
         log "Bringing interface up before dhclient..."
-        sudo ip link set "$interface" up
+        run_cmd ip link set "$interface" up
         
         # Release old IP
-        if sudo dhclient -r "$interface" >/dev/null 2>&1; then
+        log "Releasing old IP with dhclient..."
+        if run_cmd dhclient -r "$interface" >/dev/null 2>&1; then
             log "Released old IP with dhclient"
+        else
+            log "No old IP to release (or release failed)"
         fi
         
         # Wait a moment before requesting new IP
         sleep 2
         
         # Request new IP with dhclient
-        if sudo dhclient "$interface" >/dev/null 2>&1; then
+        log "Running: dhclient $interface"
+        local dhclient_output=$(run_cmd dhclient "$interface" 2>&1)
+        local dhclient_exit_code=$?
+        
+        if [[ $dhclient_exit_code -eq 0 ]]; then
             log "dhclient renewal command successful"
+            log "dhclient output: $dhclient_output"
             renewal_successful=true
         else
-            log "dhclient renewal command failed"
+            log "dhclient renewal command failed with exit code $dhclient_exit_code"
+            log "dhclient output: $dhclient_output"
         fi
     fi
     
@@ -599,6 +633,9 @@ check_and_renew_ip() {
                 ip_assigned=true
             else
                 log "No IP address found on attempt $attempt, waiting..."
+                # Debug: Show interface details
+                log "DEBUG: Interface $interface details:"
+                log "DEBUG: $(ip addr show "$interface" | grep -E "(inet|UP|DOWN)")"
                 attempt=$((attempt + 1))
                 if [[ $attempt -le $max_attempts ]]; then
                     sleep 1  # Check every second for faster response
