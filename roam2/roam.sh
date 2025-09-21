@@ -506,13 +506,15 @@ check_and_renew_ip() {
             # Start dhcpcd daemon (this is what works when you run it manually)
             log "Running: sudo dhcpcd $interface (starting daemon)"
             
-            # Create a writable directory for dhcpcd since /run might be read-only
-            local dhcpcd_rundir="/tmp/dhcpcd_${interface}_$(date +%s)"
-            mkdir -p "$dhcpcd_rundir"
+            # Try to create /run/dhcpcd if it doesn't exist and is writable
+            if [[ ! -d "/run/dhcpcd" ]]; then
+                log "Creating /run/dhcpcd directory..."
+                sudo mkdir -p /run/dhcpcd 2>/dev/null || log "Could not create /run/dhcpcd, continuing anyway..."
+            fi
             
             # Capture both stdout and stderr to see what's happening
             local dhcpcd_log="/tmp/dhcpcd_${interface}_$(date +%s).log"
-            sudo dhcpcd -R "$dhcpcd_rundir" "$interface" > "$dhcpcd_log" 2>&1 &
+            sudo dhcpcd "$interface" > "$dhcpcd_log" 2>&1 &
             local dhcpcd_pid=$!
             log "dhcpcd daemon started with PID: $dhcpcd_pid"
             
@@ -533,8 +535,6 @@ check_and_renew_ip() {
                     log "dhcpcd output: $(cat "$dhcpcd_log")"
                     rm -f "$dhcpcd_log"
                 fi
-                # Clean up temporary directory
-                rm -rf "$dhcpcd_rundir" 2>/dev/null || true
                 log "Trying alternative method..."
             fi
         fi
