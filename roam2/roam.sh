@@ -443,8 +443,8 @@ check_and_renew_ip() {
     local renewal_successful=false
     
     if command -v dhcpcd >/dev/null 2>&1; then
-        # Check if dhcpcd daemon is running
-        if pgrep -x dhcpcd >/dev/null 2>&1; then
+        # Check if dhcpcd daemon is running (look for any dhcpcd process)
+        if pgrep -f dhcpcd >/dev/null 2>&1; then
             log "dhcpcd daemon is running, using control commands..."
             
             # Ensure interface is up
@@ -478,39 +478,39 @@ check_and_renew_ip() {
                 fi
             fi
         else
-            log "dhcpcd daemon not running, starting dhcpcd..."
+            log "dhcpcd daemon not running, starting dhcpcd daemon..."
             
             # Ensure interface is up and ready
             sudo ip link set "$interface" up
             sleep 2
             
-            # Kill any existing dhcpcd processes for this interface
-            sudo pkill -f "dhcpcd.*$interface" 2>/dev/null || true
-            sleep 1
+            # Kill any existing dhcpcd processes
+            sudo pkill -f dhcpcd 2>/dev/null || true
+            sleep 2
             
-            # Start dhcpcd and wait for it to complete
-            log "Starting dhcpcd for interface $interface..."
+            # Start dhcpcd daemon in background
+            log "Starting dhcpcd daemon for interface $interface..."
             
             # Debug: Show interface state before dhcpcd
             local interface_state=$(ip link show "$interface" | grep -oP 'state \K\w+')
             log "Interface state before dhcpcd: $interface_state"
             
-            # Run dhcpcd with shorter timeout and capture output for debugging
-            log "Running: timeout 10 sudo dhcpcd $interface"
-            local dhcpcd_output=$(timeout 10 sudo dhcpcd "$interface" 2>&1)
-            local exit_code=$?
+            # Start dhcpcd daemon (this is what works when you run it manually)
+            log "Running: sudo dhcpcd $interface (starting daemon)"
+            sudo dhcpcd "$interface" >/dev/null 2>&1 &
+            local dhcpcd_pid=$!
+            log "dhcpcd daemon started with PID: $dhcpcd_pid"
             
-            if [[ $exit_code -eq 0 ]]; then
-                log "dhcpcd completed successfully"
-                renewal_successful=true
-            elif [[ $exit_code -eq 124 ]]; then
-                log "dhcpcd timed out after 10 seconds, but may have succeeded - checking for IP..."
-                log "dhcpcd output: $dhcpcd_output"
-                # Don't mark as failed yet, let the verification process check
+            # Give the daemon time to start and get an IP
+            log "Waiting for dhcpcd daemon to get IP address..."
+            sleep 3
+            
+            # Check if daemon is still running and got an IP
+            if kill -0 $dhcpcd_pid 2>/dev/null; then
+                log "dhcpcd daemon is running, checking for IP assignment..."
                 renewal_successful=true
             else
-                log "dhcpcd failed with exit code $exit_code"
-                log "dhcpcd output: $dhcpcd_output"
+                log "dhcpcd daemon exited unexpectedly"
                 log "Trying alternative method..."
             fi
         fi
