@@ -485,8 +485,16 @@ check_and_renew_ip() {
             sleep 2
             
             # Kill any existing dhcpcd processes
-            sudo pkill -f dhcpcd 2>/dev/null || true
-            sleep 2
+            log "Checking for existing dhcpcd processes..."
+            local existing_processes=$(pgrep -f dhcpcd)
+            if [[ -n "$existing_processes" ]]; then
+                log "Found existing dhcpcd processes: $existing_processes"
+                log "Killing existing dhcpcd processes..."
+                sudo pkill -f dhcpcd 2>/dev/null || true
+                sleep 3
+            else
+                log "No existing dhcpcd processes found"
+            fi
             
             # Start dhcpcd daemon in background
             log "Starting dhcpcd daemon for interface $interface..."
@@ -497,7 +505,10 @@ check_and_renew_ip() {
             
             # Start dhcpcd daemon (this is what works when you run it manually)
             log "Running: sudo dhcpcd $interface (starting daemon)"
-            sudo dhcpcd "$interface" >/dev/null 2>&1 &
+            
+            # Capture both stdout and stderr to see what's happening
+            local dhcpcd_log="/tmp/dhcpcd_${interface}_$(date +%s).log"
+            sudo dhcpcd "$interface" > "$dhcpcd_log" 2>&1 &
             local dhcpcd_pid=$!
             log "dhcpcd daemon started with PID: $dhcpcd_pid"
             
@@ -511,6 +522,11 @@ check_and_renew_ip() {
                 renewal_successful=true
             else
                 log "dhcpcd daemon exited unexpectedly"
+                log "Checking dhcpcd error log:"
+                if [[ -f "$dhcpcd_log" ]]; then
+                    log "dhcpcd output: $(cat "$dhcpcd_log")"
+                    rm -f "$dhcpcd_log"
+                fi
                 log "Trying alternative method..."
             fi
         fi
