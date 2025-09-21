@@ -1,6 +1,6 @@
 # WiFi Roaming Parameters
 # SSID Name with quotes for spaces
-SSID_Name="Alonso-ENT"
+SSID_Name="_DemoCenter-Corporate"
 
 # Roaming timing parameters (in minutes)
 Min_Time_Roam=1
@@ -21,7 +21,7 @@ Max_Time_Speedtest=2
 WiFi_Interface=""
 
 # EAP Authentication Parameters
-EAP_Username="sally@nile.com"
+EAP_Username="sally@nilenetworks.com"
 EAP_Password="nilesecure"
 
 # Country code for WiFi regulations
