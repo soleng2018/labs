@@ -31,7 +31,7 @@ error_exit() {
 check_required_tools() {
     log "Checking required tools..."
     
-    local required_tools=("iw" "iwconfig" "wpa_cli" "dhcpcd" "ip" "grep" "awk" "cut" "tr" "sed")
+    local required_tools=("iw" "iwconfig" "wpa_cli" "dhcpcd" "dhclient" "ip" "grep" "awk" "cut" "tr" "sed")
     local missing_tools=()
     local install_command=""
     
@@ -85,6 +85,9 @@ check_required_tools() {
                     ;;
                 "dhcpcd")
                     package_map+=("dhcpcd5")
+                    ;;
+                "dhclient")
+                    package_map+=("isc-dhcp-client")
                     ;;
                 "ip"|"grep"|"awk"|"cut"|"tr"|"sed")
                     package_map+=("coreutils")
@@ -433,10 +436,62 @@ check_and_renew_ip() {
         log "No IP address found or renewal requested, attempting to renew..."
     fi
     
-    # Try to renew IP address
-    if sudo dhcpcd "$interface" >/dev/null 2>&1; then
-        log "Running dhcpcd for IP renewal..."
-        sleep 3  # Wait for IP assignment
+    # Try to renew IP address using dhcpcd control commands
+    log "Attempting IP renewal for interface: $interface"
+    
+    # Method 1: Try dhcpcd control command (if dhcpcd daemon is running)
+    local renewal_successful=false
+    
+    if command -v dhcpcd >/dev/null 2>&1; then
+        # Check if dhcpcd daemon is running
+        if pgrep -x dhcpcd >/dev/null 2>&1; then
+            log "dhcpcd daemon is running, using control command..."
+            if sudo dhcpcd -n "$interface" >/dev/null 2>&1; then
+                log "dhcpcd control command successful"
+                renewal_successful=true
+            else
+                log "dhcpcd control command failed, trying alternative method..."
+            fi
+        else
+            log "dhcpcd daemon not running, starting dhcpcd..."
+            if sudo dhcpcd "$interface" >/dev/null 2>&1; then
+                log "dhcpcd started successfully"
+                renewal_successful=true
+            else
+                log "Failed to start dhcpcd, trying alternative method..."
+            fi
+        fi
+    fi
+    
+    # Method 2: Try dhclient as alternative
+    if [[ "$renewal_successful" != "true" ]] && command -v dhclient >/dev/null 2>&1; then
+        log "Trying dhclient as alternative..."
+        if sudo dhclient -r "$interface" >/dev/null 2>&1; then
+            log "Released old IP with dhclient"
+        fi
+        if sudo dhclient "$interface" >/dev/null 2>&1; then
+            log "dhclient renewal successful"
+            renewal_successful=true
+        else
+            log "dhclient renewal failed"
+        fi
+    fi
+    
+    # Method 3: Try systemctl restart networking (if available)
+    if [[ "$renewal_successful" != "true" ]] && command -v systemctl >/dev/null 2>&1; then
+        log "Trying systemctl restart networking..."
+        if sudo systemctl restart networking >/dev/null 2>&1; then
+            log "systemctl restart networking successful"
+            renewal_successful=true
+        else
+            log "systemctl restart networking failed"
+        fi
+    fi
+    
+    # Wait for IP assignment
+    if [[ "$renewal_successful" == "true" ]]; then
+        log "Waiting for IP assignment..."
+        sleep 5  # Give more time for IP assignment
         
         # Check again for IP address
         ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
@@ -450,11 +505,11 @@ check_and_renew_ip() {
             log "  DNS servers: ${dns_servers:-'Not found'}"
             return 0
         else
-            log "Warning: IP address renewal failed"
+            log "Warning: IP renewal command succeeded but no IP address assigned"
             return 1
         fi
     else
-        log "Warning: Failed to run dhcpcd for IP renewal"
+        log "Warning: All IP renewal methods failed"
         return 1
     fi
 }
