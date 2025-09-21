@@ -446,19 +446,61 @@ check_and_renew_ip() {
         # Check if dhcpcd daemon is running
         if pgrep -x dhcpcd >/dev/null 2>&1; then
             log "dhcpcd daemon is running, using control command..."
+            
+            # Ensure interface is up
+            sudo ip link set "$interface" up
+            sleep 1
+            
+            # Try to renew with existing daemon
             if sudo dhcpcd -n "$interface" >/dev/null 2>&1; then
                 log "dhcpcd control command successful"
                 renewal_successful=true
             else
-                log "dhcpcd control command failed, trying alternative method..."
+                log "dhcpcd control command failed, trying to restart daemon..."
+                # Kill existing daemon and start fresh
+                sudo pkill -x dhcpcd 2>/dev/null || true
+                sleep 2
+                if timeout 30 sudo dhcpcd "$interface" >/dev/null 2>&1; then
+                    log "dhcpcd restarted successfully"
+                    renewal_successful=true
+                else
+                    log "dhcpcd restart failed, trying alternative method..."
+                fi
             fi
         else
             log "dhcpcd daemon not running, starting dhcpcd..."
-            if sudo dhcpcd "$interface" >/dev/null 2>&1; then
-                log "dhcpcd started successfully"
+            
+            # Ensure interface is up and ready
+            sudo ip link set "$interface" up
+            sleep 2
+            
+            # Kill any existing dhcpcd processes for this interface
+            sudo pkill -f "dhcpcd.*$interface" 2>/dev/null || true
+            sleep 1
+            
+            # Start dhcpcd and wait for it to complete
+            log "Starting dhcpcd for interface $interface..."
+            
+            # Debug: Show interface state before dhcpcd
+            local interface_state=$(ip link show "$interface" | grep -oP 'state \K\w+')
+            log "Interface state before dhcpcd: $interface_state"
+            
+            # Run dhcpcd with timeout and capture output for debugging
+            local dhcpcd_output=$(timeout 30 sudo dhcpcd "$interface" 2>&1)
+            local exit_code=$?
+            
+            if [[ $exit_code -eq 0 ]]; then
+                log "dhcpcd completed successfully"
+                renewal_successful=true
+            elif [[ $exit_code -eq 124 ]]; then
+                log "dhcpcd timed out, but may have succeeded - checking for IP..."
+                log "dhcpcd output: $dhcpcd_output"
+                # Don't mark as failed yet, let the verification process check
                 renewal_successful=true
             else
-                log "Failed to start dhcpcd, trying alternative method..."
+                log "dhcpcd failed with exit code $exit_code"
+                log "dhcpcd output: $dhcpcd_output"
+                log "Trying alternative method..."
             fi
         fi
     fi
@@ -513,8 +555,8 @@ check_and_renew_ip() {
             sleep $((attempt * 2))  # Increasing delay: 2, 4, 6, 8, 10, 12 seconds
             
             # Check for IP address
-            ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
-            if [[ -n "$ip_address" ]]; then
+        ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
+        if [[ -n "$ip_address" ]]; then
                 log "IP address assigned successfully: $ip_address"
                 ip_assigned=true
             else
@@ -535,12 +577,12 @@ check_and_renew_ip() {
                 log "Testing IP connectivity by pinging gateway: $gateway"
                 if ping -c 1 -W 2 "$gateway" >/dev/null 2>&1; then
                     log "IP address is working correctly"
-                    return 0
-                else
+            return 0
+        else
                     log "Warning: IP address assigned but gateway unreachable"
-                    return 1
-                fi
-            else
+            return 1
+        fi
+    else
                 log "Warning: IP address assigned but no gateway found"
                 return 1
             fi
@@ -806,7 +848,7 @@ connect_to_bssid() {
     timeout 10 sudo wpa_cli -i "$INTERFACE" roam "$target_bssid" >/dev/null 2>&1 || roam_exit_code=$?
     
     # Wait a moment for the roam to complete
-    sleep 3
+        sleep 3
     
     # Check if the roam was actually successful regardless of wpa_cli exit code
     local actual_bssid=""
@@ -814,7 +856,7 @@ connect_to_bssid() {
     
     # Method 1: Check wpa_cli status
     actual_bssid=$(timeout 5 sudo wpa_cli -i "$INTERFACE" status 2>/dev/null | grep -i bssid | cut -d= -f2 | tr -d ' ')
-    if [[ -n "$actual_bssid" && "$actual_bssid" != "00:00:00:00:00:00" ]]; then
+        if [[ -n "$actual_bssid" && "$actual_bssid" != "00:00:00:00:00:00" ]]; then
         # Normalize for comparison
         local actual_normalized=$(echo "$actual_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
         local target_normalized=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
@@ -827,8 +869,8 @@ connect_to_bssid() {
         fi
     else
         # Method 2: Try alternative verification using iw
-        actual_bssid=$(iw dev "$INTERFACE" link | grep "Connected to" | awk '{print $3}' | tr -d ' ')
-        if [[ -n "$actual_bssid" ]]; then
+            actual_bssid=$(iw dev "$INTERFACE" link | grep "Connected to" | awk '{print $3}' | tr -d ' ')
+            if [[ -n "$actual_bssid" ]]; then
             # Normalize for comparison
             local actual_normalized=$(echo "$actual_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
             local target_normalized=$(echo "$target_bssid" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
