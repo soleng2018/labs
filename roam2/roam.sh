@@ -466,14 +466,25 @@ check_and_renew_ip() {
     # Method 2: Try dhclient as alternative
     if [[ "$renewal_successful" != "true" ]] && command -v dhclient >/dev/null 2>&1; then
         log "Trying dhclient as alternative..."
+        
+        # Ensure interface is up before trying dhclient
+        log "Bringing interface up before dhclient..."
+        sudo ip link set "$interface" up
+        
+        # Release old IP
         if sudo dhclient -r "$interface" >/dev/null 2>&1; then
             log "Released old IP with dhclient"
         fi
+        
+        # Wait a moment before requesting new IP
+        sleep 2
+        
+        # Request new IP with dhclient
         if sudo dhclient "$interface" >/dev/null 2>&1; then
-            log "dhclient renewal successful"
+            log "dhclient renewal command successful"
             renewal_successful=true
         else
-            log "dhclient renewal failed"
+            log "dhclient renewal command failed"
         fi
     fi
     
@@ -488,25 +499,70 @@ check_and_renew_ip() {
         fi
     fi
     
-    # Wait for IP assignment
+    # Wait for IP assignment with multiple checks
     if [[ "$renewal_successful" == "true" ]]; then
         log "Waiting for IP assignment..."
-        sleep 5  # Give more time for IP assignment
         
-        # Check again for IP address
-        ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
-        if [[ -n "$ip_address" ]]; then
-            log "IP address renewed successfully: $ip_address"
+        # Try multiple times with increasing delays
+        local max_attempts=6
+        local attempt=1
+        local ip_assigned=false
+        
+        while [[ $attempt -le $max_attempts && "$ip_assigned" != "true" ]]; do
+            log "IP assignment check attempt $attempt of $max_attempts..."
+            sleep $((attempt * 2))  # Increasing delay: 2, 4, 6, 8, 10, 12 seconds
             
+            # Check for IP address
+            ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
+            if [[ -n "$ip_address" ]]; then
+                log "IP address assigned successfully: $ip_address"
+                ip_assigned=true
+            else
+                log "No IP address found on attempt $attempt, waiting..."
+                attempt=$((attempt + 1))
+            fi
+        done
+        
+        if [[ "$ip_assigned" == "true" ]]; then
             # Show network details
             local gateway=$(ip route | grep default | grep "$interface" | awk '{print $3}' | head -1)
             local dns_servers=$(grep nameserver /etc/resolv.conf | awk '{print $2}' | tr '\n' ' ')
             log "  Gateway: ${gateway:-'Not found'}"
             log "  DNS servers: ${dns_servers:-'Not found'}"
-            return 0
+            
+            # Final verification - test connectivity
+            if [[ -n "$gateway" ]]; then
+                log "Testing IP connectivity by pinging gateway: $gateway"
+                if ping -c 1 -W 2 "$gateway" >/dev/null 2>&1; then
+                    log "IP address is working correctly"
+                    return 0
+                else
+                    log "Warning: IP address assigned but gateway unreachable"
+                    return 1
+                fi
+            else
+                log "Warning: IP address assigned but no gateway found"
+                return 1
+            fi
         else
-            log "Warning: IP renewal command succeeded but no IP address assigned"
-            return 1
+            log "Warning: IP renewal command succeeded but no IP address assigned after $max_attempts attempts"
+            
+            # Try one more method - force interface restart
+            log "Attempting interface restart as last resort..."
+            sudo ip link set "$interface" down
+            sleep 2
+            sudo ip link set "$interface" up
+            sleep 3
+            
+            # Final check
+            ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
+            if [[ -n "$ip_address" ]]; then
+                log "IP address assigned after interface restart: $ip_address"
+                return 0
+            else
+                log "Warning: All IP assignment attempts failed"
+                return 1
+            fi
         fi
     else
         log "Warning: All IP renewal methods failed"
