@@ -445,26 +445,36 @@ check_and_renew_ip() {
     if command -v dhcpcd >/dev/null 2>&1; then
         # Check if dhcpcd daemon is running
         if pgrep -x dhcpcd >/dev/null 2>&1; then
-            log "dhcpcd daemon is running, using control command..."
+            log "dhcpcd daemon is running, using control commands..."
             
             # Ensure interface is up
             sudo ip link set "$interface" up
             sleep 1
             
-            # Try to renew with existing daemon
+            # First, release the interface from the daemon
+            log "Releasing interface from dhcpcd daemon..."
+            if sudo dhcpcd -k "$interface" >/dev/null 2>&1; then
+                log "Interface released from dhcpcd daemon"
+                sleep 2
+            else
+                log "Failed to release interface, continuing anyway..."
+            fi
+            
+            # Now renew the interface using the daemon
+            log "Requesting IP renewal from dhcpcd daemon..."
             if sudo dhcpcd -n "$interface" >/dev/null 2>&1; then
-                log "dhcpcd control command successful"
+                log "dhcpcd renewal command successful"
                 renewal_successful=true
             else
-                log "dhcpcd control command failed, trying to restart daemon..."
-                # Kill existing daemon and start fresh
+                log "dhcpcd renewal command failed, trying direct daemon restart..."
+                # As last resort, restart the daemon
                 sudo pkill -x dhcpcd 2>/dev/null || true
-                sleep 2
-                if timeout 30 sudo dhcpcd "$interface" >/dev/null 2>&1; then
-                    log "dhcpcd restarted successfully"
+                sleep 3
+                if timeout 10 sudo dhcpcd "$interface" >/dev/null 2>&1; then
+                    log "dhcpcd daemon restarted successfully"
                     renewal_successful=true
                 else
-                    log "dhcpcd restart failed, trying alternative method..."
+                    log "dhcpcd daemon restart failed, trying alternative method..."
                 fi
             fi
         else
@@ -485,15 +495,16 @@ check_and_renew_ip() {
             local interface_state=$(ip link show "$interface" | grep -oP 'state \K\w+')
             log "Interface state before dhcpcd: $interface_state"
             
-            # Run dhcpcd with timeout and capture output for debugging
-            local dhcpcd_output=$(timeout 30 sudo dhcpcd "$interface" 2>&1)
+            # Run dhcpcd with shorter timeout and capture output for debugging
+            log "Running: timeout 10 sudo dhcpcd $interface"
+            local dhcpcd_output=$(timeout 10 sudo dhcpcd "$interface" 2>&1)
             local exit_code=$?
             
             if [[ $exit_code -eq 0 ]]; then
                 log "dhcpcd completed successfully"
                 renewal_successful=true
             elif [[ $exit_code -eq 124 ]]; then
-                log "dhcpcd timed out, but may have succeeded - checking for IP..."
+                log "dhcpcd timed out after 10 seconds, but may have succeeded - checking for IP..."
                 log "dhcpcd output: $dhcpcd_output"
                 # Don't mark as failed yet, let the verification process check
                 renewal_successful=true
@@ -545,23 +556,29 @@ check_and_renew_ip() {
     if [[ "$renewal_successful" == "true" ]]; then
         log "Waiting for IP assignment..."
         
-        # Try multiple times with increasing delays
-        local max_attempts=6
+        # Initial shorter wait since dhcpcd is fast (3-4 seconds)
+        log "Initial wait for dhcpcd to complete IP assignment..."
+        sleep 2
+        
+        # Try multiple times with shorter, more frequent checks
+        local max_attempts=10
         local attempt=1
         local ip_assigned=false
         
         while [[ $attempt -le $max_attempts && "$ip_assigned" != "true" ]]; do
             log "IP assignment check attempt $attempt of $max_attempts..."
-            sleep $((attempt * 2))  # Increasing delay: 2, 4, 6, 8, 10, 12 seconds
             
             # Check for IP address
-        ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
-        if [[ -n "$ip_address" ]]; then
+            ip_address=$(ip addr show "$interface" | grep -oP 'inet \K[0-9.]+' | head -1)
+            if [[ -n "$ip_address" ]]; then
                 log "IP address assigned successfully: $ip_address"
                 ip_assigned=true
             else
                 log "No IP address found on attempt $attempt, waiting..."
                 attempt=$((attempt + 1))
+                if [[ $attempt -le $max_attempts ]]; then
+                    sleep 1  # Check every second for faster response
+                fi
             fi
         done
         
