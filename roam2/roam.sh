@@ -886,14 +886,40 @@ connect_to_bssid() {
     # Use wpa_cli to roam with timeout
     log "Attempting to roam to $target_bssid..."
     local roam_exit_code=0
-    timeout 10 sudo wpa_cli -i "$INTERFACE" roam "$target_bssid" >/dev/null 2>&1 || roam_exit_code=$?
+    local roam_output=$(timeout 10 sudo wpa_cli -i "$INTERFACE" roam "$target_bssid" 2>&1) || roam_exit_code=$?
+    
+    # Log the roam command output for debugging
+    if [[ -n "$roam_output" ]]; then
+        log "wpa_cli roam output: $roam_output"
+    fi
+    log "wpa_cli roam exit code: $roam_exit_code"
     
     # Wait a moment for the roam to complete
-        sleep 3
+    sleep 3
     
     # Check if the roam was actually successful regardless of wpa_cli exit code
     local actual_bssid=""
     local roam_successful=false
+    
+    # If roam command failed, try alternative method
+    if [[ $roam_exit_code -ne 0 ]]; then
+        log "wpa_cli roam command failed, trying alternative roam method..."
+        
+        # Try using wpa_cli with BSSID selection
+        log "Trying wpa_cli select_network approach..."
+        local network_id=$(sudo wpa_cli -i "$INTERFACE" list_networks | grep -i "$target_bssid" | head -1 | awk '{print $1}')
+        if [[ -n "$network_id" && "$network_id" =~ ^[0-9]+$ ]]; then
+            log "Found network ID $network_id for BSSID $target_bssid, selecting..."
+            if timeout 10 sudo wpa_cli -i "$INTERFACE" select_network "$network_id" >/dev/null 2>&1; then
+                log "select_network command successful"
+                sleep 2
+            else
+                log "select_network command failed"
+            fi
+        else
+            log "Could not find network ID for BSSID $target_bssid"
+        fi
+    fi
     
     # Method 1: Check wpa_cli status
     actual_bssid=$(timeout 5 sudo wpa_cli -i "$INTERFACE" status 2>/dev/null | grep -i bssid | cut -d= -f2 | tr -d ' ')
